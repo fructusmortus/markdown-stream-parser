@@ -1,0 +1,98 @@
+'use strict'
+
+import chalk from 'chalk'
+
+import TokensStreamBuffer from './tokens-sstream-buffer.ts'
+import MarkdownStreamParserStateMachine from './state-machine/markdown-state-machine.ts'
+
+export default class MarkdownStreamParser {
+    static instances = new Map()
+
+    static getInstance(instanceId) {
+        if (!MarkdownStreamParser.instances.has(instanceId)) {
+            MarkdownStreamParser.instances.set(instanceId, new MarkdownStreamParser(instanceId))    // Save the instance, ensure it is available statically
+        }
+
+        console.info(`${chalk.blue('AiStreamParser ->')} class.MarkdownStreamParser::${chalk.green('getInstance')}::instanceId: ${instanceId}, instances: ${MarkdownStreamParser.instances}`)
+
+        return MarkdownStreamParser.instances.get(instanceId)
+    }
+
+    static removeInstance(instanceId) {
+        if (MarkdownStreamParser.instances.has(instanceId)) {
+            MarkdownStreamParser.instances.delete(instanceId)
+        }
+    }
+
+    constructor() {
+        this.tokensStreamProcessor = new TokensStreamBuffer()
+        this.markdownStreamParser = new MarkdownStreamParserStateMachine()
+        this.unsubscribeFromProcessor = () => {}
+        this.unsubscribeFromStateMachine = () => {}
+
+        this.parsing = false
+        this.tokenParseListeners = []
+    }
+
+    // Allow to subscribe to token parse, returns an unsubscribe function
+    subscribeToTokenParse(listener) {
+        const wrappedListener = (data) => listener(data, unsubscribe)
+        const unsubscribe = () => {
+            this.tokenParseListeners = this.tokenParseListeners.filter(l => l !== wrappedListener)
+        }
+
+        this.tokenParseListeners.push(wrappedListener)
+
+        return unsubscribe    // Allow to unsubscribe from token parse
+    }
+
+    // Internal method to notify all token complete listeners
+    notifyTokenParse(token) {
+        this.tokenParseListeners.forEach(listener => listener(token))
+    }
+
+    // Start parsing by subscribing to the TokensStreamBuffer's word completion event
+    startParsing() {
+        if (this.parsing) {
+            return // Do not start parsing if it's already started
+        }
+
+        this.notifyTokenParse({status: 'START_STREAM'})
+
+        // Subscribe to receive the completed segment from TokensStreamBuffer
+        this.unsubscribeFromProcessor = this.tokensStreamProcessor.subscribeToSegmentCompletion((word) => {
+            // console.log('class.MarkdownStreamParser::subscribeToSegmentCompletion::word:', {word})
+            this.markdownStreamParser.parseSegment(word)     // Send the word to the state machine for parsing
+        })
+
+        // Subscribe to receive the parsed segment from TextStreamStateMachine
+        this.unsubscribeFromStateMachine = this.markdownStreamParser.subscribeToParsedSegment(parsedSegment => {
+            this.notifyTokenParse({status: 'STREAMING', segment: parsedSegment}) // Relay the parsed segment event
+        })
+
+        this.parsing = true
+    }
+
+    // Parse individual chunk token
+    parseToken(chunk) {
+        if (!this.parsing) {
+            const error = new Error('Parser is not started.')
+            console.info(`${chalk.blue('AiStreamParser ->')} ${chalk.red('class.MarkdownStreamParser::parseToken::error')}`, error)
+
+            return error
+        }
+
+        this.tokensStreamProcessor.receiveChunk(chunk)
+    }
+
+    // Stop parsing by unsubscribing from the TokensStreamBuffer
+    stopParsing() {
+        this.tokensStreamProcessor.flushBuffer()    // Flush any remaining content
+        this.markdownStreamParser.resetParser()    // Reset the state machine
+        this.unsubscribeFromProcessor()    // Unsubscribe from the processor
+        this.unsubscribeFromStateMachine()    // Unsubscribe from the state machine
+        this.parsing = false    // Mark as not parsing
+        this.notifyTokenParse({status: 'END_STREAM'})    // Notify that the stream has ended
+    }
+}
+

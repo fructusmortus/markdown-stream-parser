@@ -1,0 +1,31 @@
+services:
+    lixpi-markdown-stream-parser-demo:
+        container_name: lixpi-markdown-stream-parser-demo
+        restart: always
+        image: lixpi/markdown-stream-parser-demo
+        build:
+            dockerfile: Dockerfile
+            context: .
+        environment:
+            # Force color output in the terminal, required for chalk.js to work
+            FORCE_COLOR: 1
+
+            # Node.js config, specifically to enable all experimental TypeScript features
+            NODE_OPTIONS: '--trace-deprecation --abort-on-uncaught-exception --trace-warnings --disable-warning=ExperimentalWarning --experimental-transform-types'
+        volumes:
+            - ./debug-scripts/:/usr/src/service/debug-scripts/:cached
+            - ./src/:/usr/src/service/src/:cached
+            - ./package.json/:/usr/src/service/package.json:cached
+
+        working_dir: /usr/src/service
+
+        # making sure we install the packages before running the dev server
+        # command: >
+        #     sh -c "pnpm i
+        #     && pnpm run dev"
+        # command: >
+        #     pnpm run dev
+        command: >
+            sh -c "pnpm i
+            && sleep infinity"
+        stop_signal: SIGTERM
