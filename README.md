@@ -347,6 +347,34 @@ Although running complex regexes can be less efficient, we prioritize correct re
 
 We are continuously evaluating this approach and exploring whether more advanced data structures could further improve accuracy or performance. This remains an active area of development.
 
+
+## Running examples
+
+To try out the parser with example streams, look inside the `llm-streams-examples` directory. This folder contains real LLM responses collected from various providers. Each response has two versions:
+
+- `*.json`: An array of items used for streaming
+- `*.txt`: The same stream combined into a single file
+
+Having the `*.txt` version is handy for visual comparison and debugging the parser.
+
+
+Inside the repository root dir run:
+
+1. **Start the Docker container:**
+   ```bash
+   docker compose up -d
+   ```
+
+2. **Run the debug parser inside the container:**
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser --file=<file-name>.json
+   ```
+
+   Replace `<file-name>` with the name of one of the `.json` files located in the `llm-streams-examples` directory (this directory is mounted from your host machine into the container).
+
+This will execute the parser against the selected example stream and print parsed segments to the console.
+
+
 ---
 
 
