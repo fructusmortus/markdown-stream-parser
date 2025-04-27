@@ -4,8 +4,8 @@
     "version": "0.0.2",
     "type": "module",
     "scripts": {
-        "dev": "",
-        "build": "",
+        "dev": "#TODO",
+        "build": "#TODO",
         "debug-parser": "node ./debug-scripts/char-streamer.ts"
     },
     "devDependencies": {

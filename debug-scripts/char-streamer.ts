@@ -1,19 +1,36 @@
-
 import fs from 'fs'
 
 import { log, info, infoStr, warn, err } from './debug-tools.ts'
 
 import MarkdownStreamParser from '../src/markdown-stream-parser.ts'
 
-const DELAY = 0;
+// Parse CLI arguments
+const args = process.argv.slice(2);
+let DELAY = 0;
+let fileName = '';
 
-const fileName = '2025-04-09T23:05:36.718Z'
-const sourceFile = `/usr/src/service/debug-scripts/llm-streams-examples/${fileName}.json`;
+for (const arg of args) {
+    if (arg.startsWith('--interval=')) {
+        const val = parseInt(arg.split('=')[1], 10);
+        if (!isNaN(val)) DELAY = val;
+    }
+    if (arg.startsWith('--file=')) {
+        fileName = arg.split('=')[1];
+    }
+}
+
+if (!fileName) {
+    throw new Error('Missing required argument: --file=<path-to-file>');
+}
+
+const sourceFile = `/usr/src/service/debug-scripts/llm-streams-examples/${fileName}`;
 
 const markdownStreamParser = MarkdownStreamParser.getInstance(fileName)
 
-async function* streamJSONinChunks(jsonArray) {
-    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+type JSONChunk = string | object; // Adjust as needed for your JSON structure
+
+async function* streamJSONinChunks(jsonArray: JSONChunk[]): AsyncGenerator<JSONChunk, void, unknown> {
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     // Iterate over each object in the json array
     for (const item of jsonArray) {
@@ -22,20 +39,19 @@ async function* streamJSONinChunks(jsonArray) {
             await delay(DELAY);
         }
     }
-  }
+}
 
 
 ;(async () => {
     console.log('\n')
 
-    const jsonContent = fs.readFileSync(sourceFile, { encoding: 'utf-8' });
-    const textStream = streamJSONinChunks(JSON.parse(jsonContent));
-
+    const jsonContent: string = fs.readFileSync(sourceFile, { encoding: 'utf-8' });
+    const parsedJson: JSONChunk[] = JSON.parse(jsonContent);
+    const textStream = streamJSONinChunks(parsedJson);
 
     markdownStreamParser.startParsing()    // Parser has to be started before the stream is created
 
     for await (const chunk of textStream) {
-        // console.log('chunk', JSON.stringify(chunk))
         markdownStreamParser.parseToken(chunk);
     }
 
@@ -44,13 +60,16 @@ async function* streamJSONinChunks(jsonArray) {
 })()
 
 
-markdownStreamParser.subscribeToTokenParse((parsedSegment, unsubscribe) => {
-    //INFO: Parsed segment is available here
-    console.log('parsedSegment', parsedSegment)
+type UnsubscribeFn = () => void;
 
-    // At the end of the stream, unsubscribe from the parser service
-    if (parsedSegment.status === 'END_STREAM') {
-        unsubscribe()
-        MarkdownStreamParser.removeInstance(fileName)
+markdownStreamParser.subscribeToTokenParse(
+    (parsedSegment: any, unsubscribe: UnsubscribeFn) => {
+        console.log('parsedSegment', parsedSegment)    // Happy little parsed segment
+
+        // At the end of the stream, unsubscribe from the parser service
+        if (parsedSegment.status === 'END_STREAM') {
+            unsubscribe()
+            MarkdownStreamParser.removeInstance(fileName)
+        }
     }
-})
+)
