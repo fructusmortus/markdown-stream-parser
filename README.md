@@ -6,7 +6,7 @@ It's built to handle the ambiguities of LLM-generated streams, which often produ
 
 ***Please note that this project is in an early stage of development, so there are bugs and missing features.***
 
-Giving this repository a star *★* is a great way to encourage faster development!
+Giving this repository a star ***★*** is a great way to encourage faster development!
 
 ## Installation
 
@@ -324,7 +324,7 @@ flowchart TD
     D -->|notify parsed segment| E[Subscribers]
 ```
 
-**Benefits of this approach:**
+##### Benefits of this approach:
 - Enables real-time, event-driven processing of Markdown streams
 - Cleanly separates parsing logic from rendering or further processing
 - Supports multiple independent subscribers per parser instance
@@ -360,22 +360,18 @@ We are continuously evaluating this approach and exploring whether more advanced
 ## FAQs / Troubleshooting
 
 **Q:** Why do I get an error when calling `parseToken` before `startParsing`?
-
 **A:** You must call `startParsing()` before feeding tokens.
 
 
 **Q:** How do I unsubscribe from output events?
-
 **A:** The function returned by `subscribeToTokenParse` will unsubscribe your listener. It takes no arguments.
 
 
 **Q:** Can I parse multiple streams in parallel?
-
 **A:** Yes, use different `instanceId` values for each stream.
 
 
 **Q:** Is there a way to enable debug logging?
-
 **A:** Set the `IS_DEBUG` flag in `markdownStateMachine.ts` to `true` to enable verbose debug output.
 
 ---

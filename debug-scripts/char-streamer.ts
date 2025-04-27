@@ -29,32 +29,19 @@ async function* streamJSONinChunks(jsonArray) {
     console.log('\n')
 
     const jsonContent = fs.readFileSync(sourceFile, { encoding: 'utf-8' });
-
-    const jsonData = JSON.parse(jsonContent);
-
-    const textStream = streamJSONinChunks(jsonData);
+    const textStream = streamJSONinChunks(JSON.parse(jsonContent));
 
 
-    // Parser has to be started before the stream is created
-    markdownStreamParser.startParsing();
+    markdownStreamParser.startParsing()    // Parser has to be started before the stream is created
 
-    // for await (const chunk of textStream) {
-    //     // console.log('chunk', JSON.stringify(chunk))
-    //     markdownStreamParser.parseToken(chunk);
-    // }
-
-    for await (const chunk of ["Hello", " ~~world~~", "!", "  \n"]) {
+    for await (const chunk of textStream) {
+        // console.log('chunk', JSON.stringify(chunk))
         markdownStreamParser.parseToken(chunk);
     }
 
-    // At the end of the stream, it flushes any remaining content
-    markdownStreamParser.stopParsing();
+    markdownStreamParser.stopParsing()    // At the end of the stream, it flushes any remaining content
 
 })()
-
-
-
-
 
 
 markdownStreamParser.subscribeToTokenParse((parsedSegment, unsubscribe) => {
@@ -67,20 +54,3 @@ markdownStreamParser.subscribeToTokenParse((parsedSegment, unsubscribe) => {
         MarkdownStreamParser.removeInstance(fileName)
     }
 })
-
-
-
-// // Subscribe to the parser service
-// const markdownStreamParserUnsubscribe = markdownStreamParser.subscribeToTokenParse(parsedSegment => {
-//     //INFO: Parsed segment is available here
-//     console.log(parsedSegment)
-// })
-
-
-// if(!markdownStreamParser.parsing) {
-//     markdownStreamParserUnsubscribe()    // Unsubscribe from the parser service
-//     MarkdownStreamParser.removeInstance(fileName)    // Dispose of the parser instance
-// }
-
-
-
