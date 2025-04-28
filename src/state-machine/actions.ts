@@ -1,17 +1,72 @@
 'use strict';
 
-import { BLOCK_TYPES, REGEX, INLINE_STYLE_GROUPS } from './constants.ts';
+import {
+    BLOCK_TYPES,
+    REGEX,
+    INLINE_STYLE_GROUPS
+} from './constants.ts';
 import { truncateTrailingNewLine } from './utils.ts';
 
-const setIsProcessingNewLine = (context, event, params) => ({
+import type { Context } from './markdown-state-machine.ts'
+
+type MatchObject = {
+    fullMatch: string;
+    content: string;
+    prefixedContent?: string;
+    postfixedContent?: string;
+    openingStyleMarker?: string;
+    closingStyleMarker?: string;
+}
+
+export type ParsedSegment = {
+    segment: string
+    content: string
+    type: string
+    styles: any[]
+    language?: string
+    level?: number
+    origin?: string
+    isProcessingNewLine: boolean
+    isBlockDefining: boolean
+}
+
+export type ActionParams = {
+    styleGroup?: string
+    match?: string
+    origin?: string
+    emitter?: (blockContent: ParsedSegment) => void
+    isTruncateTrailingNewLine?: boolean
+    skipStyles?: boolean
+    isDebug?: boolean
+    styleGroups?: any
+}
+
+export type ActionEvent = {
+    value?: any
+    segment?: string
+}
+
+const setIsProcessingNewLine = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => ({
     isProcessingNewLine: event.value
 })
 
-const setIsProcessingStylingMarkerSegment = (context, event, params) => ({
+const setIsProcessingStylingMarkerSegment = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => ({
     isProcessingStylingMarkerSegment: event.value
 })
 
-const setHeader = (context, event, params) => {
+const setHeader = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+    s) => {
     const match = event.segment.match(REGEX.headerMarker);
     if (match) {
         const hashes = match[1]
@@ -25,9 +80,17 @@ const setHeader = (context, event, params) => {
     }
 }
 
-const applyInlineTextStyle = (context, event, params) => {
+const applyInlineTextStyle = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => {
     const { styleGroup, match } = params;
-    let matchObject = {};
+
+    let matchObject: MatchObject = {
+        fullMatch: '',
+        content: ''
+    };
 
     switch (match) {
         case 'full':
@@ -89,12 +152,20 @@ const applyInlineTextStyle = (context, event, params) => {
     }
 }
 
-const setParagraph = (context, event, params) => ({
+const setParagraph = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => ({
     blockType: BLOCK_TYPES.paragraph,
     isBlockDefining: ((context.blockType !== BLOCK_TYPES.paragraph) || context.isProcessingNewLine) ? true : false, // Mark as blockDefining when transitioning to a new block type
 })
 
-const setCodeBlock = (context, event, params) => {
+const setCodeBlock = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => {
     const matchObject = (([
         fullMatch,
         backticks,
@@ -114,49 +185,86 @@ const setCodeBlock = (context, event, params) => {
     }
 }
 
-const debugParsedSegment = (context, event, params) => {
+const debugParsedSegment = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): void => {
     console.log({origin: params.origin, parsedSegment: context})
 }
 
-const bufferBlockContent = (context, event, params) => ({
+const bufferBlockContent = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => ({
     blockContentBuffer: context.blockContentBuffer + event.segment
 })
 
-const bufferCodeBlockSegments = (context, event, params) => ({
+const bufferCodeBlockSegments = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => ({
     codeBlockSegmentsBuffer: [...context.codeBlockSegmentsBuffer, event.segment]
 })
 
-const resetBlockContentBuffer = (context, event, params) => ({
+const resetBlockContentBuffer = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => ({
     blockContentBuffer: ''
 })
 
-const resetCodeBlockSegmentsBuffer = (context, event, params) => ({
+const resetCodeBlockSegmentsBuffer = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => ({
     codeBlockSegmentsBuffer: []
 })
 
-const resetInlineTextStyle = (context, event, params) => ({
+const resetInlineTextStyle = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => ({
     styles: []
 })
 
-const resetPrefixedContent = (context, event, params) => ({
+const resetPrefixedContent = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => ({
     parsedSegmentPrefixedContent: ''
 })
 
-const resetPostfixedContent = (context, event, params) => ({
+const resetPostfixedContent = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => ({
     parsedSegmentPostfixedContent: ''
 })
 
-const emitParsedSegment = (context, event, params) => {
+const emitParsedSegment = (
+    context: Context,
+    event: ActionEvent,
+    params: ActionParams
+): Partial<Context> => {
     const {
         emitter = (blockContent) => console.error('emitParsedSegment emitter function is not set, using default value:', blockContent),
         isTruncateTrailingNewLine = false,
         skipStyles = false,
         isDebug = false
     } = params;
+
     const segment = isTruncateTrailingNewLine ? truncateTrailingNewLine(event.segment) : event.segment;
     const styles = skipStyles ? [] : context.styles;
 
-    const blockContent = {
+    const blockContent: ParsedSegment = {
         ...(context.blockType === BLOCK_TYPES.codeBlock && { language: context.codeBlockLanguage }),
         ...(context.blockType === BLOCK_TYPES.header && { level: context.headerLevel }),
         segment,
@@ -168,7 +276,8 @@ const emitParsedSegment = (context, event, params) => {
         ...(isDebug && {origin: `${params.origin || null}`}),
     }
 
-    emitter(blockContent)     // Emit the parsed segment
+    // Emit parsed segment
+    emitter(blockContent)
 
     // And mutate the context after
     return {
@@ -200,7 +309,7 @@ const ACTIONS = {
     'debug::parsedSegment': debugParsedSegment,
 }
 
-export const actionRunner = (actionName, context, event, params) => {
+export const actionRunner = (actionName, context, event, params: ActionParams) => {
     if (ACTIONS.hasOwnProperty(actionName) === false) {
         throw new Error(`No action found for: ${actionName}`);
     }

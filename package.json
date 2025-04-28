@@ -9,10 +9,10 @@
         "debug-parser": "node ./debug-scripts/char-streamer.ts"
     },
     "devDependencies": {
+        "chalk": "*",
         "typescript": "*"
     },
     "dependencies": {
-        "chalk": "*"
     },
     "packageManager": "pnpm@9.15.0"
 }

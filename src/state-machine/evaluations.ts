@@ -2,53 +2,114 @@
 
 import { REGEX, INLINE_STYLE_GROUPS } from './constants.ts';
 
-const isProcessingNewLine = (context, event, params) => context.isProcessingNewLine;
-const isProcessingStylingMarkerSegment = (context, event, params) => context.isProcessingStylingMarkerSegment;
-const isBlockTypeSet = (context, event, params) => context.blockType !== null && context.blockType !== undefined && context.blockType !== '';
+import type { Context } from './markdown-state-machine.ts'
 
-const hasNewLine = (context, event, params) => REGEX.hasNewLineSymbol.test(event.segment);
-const hasPrefixedContent = (context, event, params) => context.prefixedContent !== null && context.prefixedContent !== undefined && context.prefixedContent !== '';
-const hasPostfixedContent = (context, event, params) => context.postfixedContent !== null && context.postfixedContent !== undefined && context.postfixedContent !== '';
-
-const endsWithNewLine = (context, event, params) => REGEX.endsWithNewLine.test(event.segment);
-const endsWithMoreThanOneNewLine = (context, event, params) => REGEX.endsWithMoreThanOneNewLine.test(event.segment);
-
-const isHeaderMarker = (context, event, params) => REGEX.headerMarker.test(event.segment);    // Checks if string contains only consequent `#` followed by optional empty space ` `
-
-const isInlineStyleMarkerPartialOrFull = (context, event, params) => INLINE_STYLE_GROUPS[params.styleGroup].regex.partialOrFull.test(event.segment);
-const isInlineStyleMarkerFull = (context, event, params) => INLINE_STYLE_GROUPS[params.styleGroup].regex.full.test(event.segment);
-const isInlineStyleMarkerPartialStart = (context, event, params) => INLINE_STYLE_GROUPS[params.styleGroup].regex.partialStart.test(event.segment);
-const isInlineStyleMarkerPartialEnd = (context, event, params) => INLINE_STYLE_GROUPS[params.styleGroup].regex.partialEnd.test(event.segment);
-
-const isCodeBlockStartMarker = (context, event, params) => REGEX.codeBlockStartMarker.test(event.segment);
-const isCodeBlockEndMarker = (context, event, params) => REGEX.codeBlockEndMarker.test(event.segment);
-
-
-const EVALUATIONS: Record<string, Function> = {
-    'is::processingNewLine': isProcessingNewLine,
-    'is::processingStylingMarkerSegment': isProcessingStylingMarkerSegment,
-
-    'is::blockTypeSet': isBlockTypeSet,
-
-    'is::headerMarker': isHeaderMarker,
-
-    'is::inlineStyleMarkerPartialOrFull': isInlineStyleMarkerPartialOrFull,
-    'is::inlineStyleMarkerFull': isInlineStyleMarkerFull,
-    'is::inlineStyleMarkerPartialStart': isInlineStyleMarkerPartialStart,
-    'is::inlineStyleMarkerPartialEnd': isInlineStyleMarkerPartialEnd,
-
-    'is::codeBlockStartMarker': isCodeBlockStartMarker,
-    'is::codeBlockEndMarker': isCodeBlockEndMarker,
-
-    'has::newLine': hasNewLine,
-    'has::prefixedContent': hasPrefixedContent,
-    'has::postfixedContent': hasPostfixedContent,
-
-    'ends::newLine': endsWithNewLine,
-    'ends::moreThanOneNewLine': endsWithMoreThanOneNewLine,
+export type EvaluationParams = {
+    styleGroup?: string
 }
 
-export const evaluationRunner = (evaluationName, context, event, params) => {
+export type EvaluationEvent = {
+    segment?: string
+}
+
+const EVALUATIONS: Record<string, Function> = {
+    'is::processingNewLine': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => context.isProcessingNewLine,
+
+    'is::processingStylingMarkerSegment': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => context.isProcessingStylingMarkerSegment,
+
+    'is::blockTypeSet': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => context.blockType !== null && context.blockType !== undefined && context.blockType !== '',
+
+    'is::headerMarker': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => REGEX.headerMarker.test(event.segment),    // Checks if string contains only consequent `#` followed by optional empty space ` `
+
+    'is::inlineStyleMarkerPartialOrFull': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => INLINE_STYLE_GROUPS[params.styleGroup].regex.partialOrFull.test(event.segment),
+
+    'is::inlineStyleMarkerFull': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => INLINE_STYLE_GROUPS[params.styleGroup].regex.full.test(event.segment),
+
+    'is::inlineStyleMarkerPartialStart': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => INLINE_STYLE_GROUPS[params.styleGroup].regex.partialStart.test(event.segment),
+
+    'is::inlineStyleMarkerPartialEnd': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => INLINE_STYLE_GROUPS[params.styleGroup].regex.partialEnd.test(event.segment),
+
+    'is::codeBlockStartMarker': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => REGEX.codeBlockStartMarker.test(event.segment),
+
+    'is::codeBlockEndMarker': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => REGEX.codeBlockEndMarker.test(event.segment),
+
+    'has::newLine': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => REGEX.hasNewLineSymbol.test(event.segment),
+
+    'has::prefixedContent': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => context.prefixedContent !== null && context.prefixedContent !== undefined && context.prefixedContent !== '',
+
+    'has::postfixedContent': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => context.postfixedContent !== null && context.postfixedContent !== undefined && context.postfixedContent !== '',
+
+    'ends::newLine': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => REGEX.endsWithNewLine.test(event.segment),
+
+    'ends::moreThanOneNewLine': (
+        context: Context,
+        event: EvaluationEvent,
+        params: EvaluationParams
+    ) => REGEX.endsWithMoreThanOneNewLine.test(event.segment),
+}
+
+export const evaluationRunner = (
+    evaluationName: keyof typeof EVALUATIONS,
+    context: Context,
+    event: EvaluationEvent,
+    params: EvaluationParams
+) => {
     if (EVALUATIONS.hasOwnProperty(evaluationName) === false) {
         throw new Error(`No evaluation found for: ${evaluationName}`);
     }

@@ -1,25 +1,15 @@
 'use strict'
 
 export default class TokensStreamBuffer {
+    private _buffer: string
+    wordCompleteListeners: Array<(word: string) => void>
+
     constructor() {
         this._buffer = ''
         this.wordCompleteListeners = []
     }
 
-    subscribeToSegmentCompletion(listener) {
-        this.wordCompleteListeners.push(listener)
-        return () => this.unsubscribeFromSegmentCompletion(listener)
-    }
-
-    unsubscribeFromSegmentCompletion(listener) {
-        this.wordCompleteListeners = this.wordCompleteListeners.filter(l => l !== listener)
-    }
-
-    notifyWordCompletion(word) {
-        this.wordCompleteListeners.forEach(listener => listener(word))
-    }
-
-    processBufferForCompletion() {
+    private processBufferForCompletion() {
         const pattern = /(\s*\S+\s+|\s*\S+((\n|\\n)+))/g
         let match
         let lastIndex = 0
@@ -49,8 +39,21 @@ export default class TokensStreamBuffer {
         }
     }
 
+    private notifyWordCompletion(word) {
+        this.wordCompleteListeners.forEach(listener => listener(word))
+    }
+
+    public subscribeToSegmentCompletion(listener) {
+        this.wordCompleteListeners.push(listener)
+        return () => this.unsubscribeFromSegmentCompletion(listener)
+    }
+
+    public unsubscribeFromSegmentCompletion(listener) {
+        this.wordCompleteListeners = this.wordCompleteListeners.filter(l => l !== listener)
+    }
+
     // Handle the end of the stream by flushing any remaining content
-    flushBuffer() {
+    public flushBuffer(): void {
         // If there's any content in the buffer that hasn't been emitted, emit it
         if (this.buffer.length > 0) {
             this.notifyWordCompletion(this.buffer)
@@ -59,16 +62,17 @@ export default class TokensStreamBuffer {
     }
 
     // Use a setter for buffer to trigger word processing upon each chunk addition
-    set buffer(value) {
+    public set buffer(value) {
         this._buffer = value
         this.processBufferForCompletion()
     }
 
-    get buffer() {
+    // Use a getter for buffer to access the current buffer value
+    public get buffer() {
         return this._buffer
     }
 
-    receiveChunk(chunk) {
+    public receiveChunk(chunk): void {
         if (typeof chunk !== 'string') {
             throw new Error('Chunk must be a string.')
         }
@@ -82,7 +86,7 @@ export default class TokensStreamBuffer {
 // const streamProcessor = new TokensStreamProcessor()
 // streamProcessor.subscribeToSegmentCompletion(word => console.log(`Word completed: ${word}`))
 
-// // Simulating chunks being received:
+// Simulating chunks being received:
 // streamProcessor.receiveChunk('Hel')
 // streamProcessor.receiveChunk('lo ')   // Emits 'Hello'
 // streamProcessor.receiveChunk('wor')

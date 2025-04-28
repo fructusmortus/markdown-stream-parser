@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "lib": ["es2015", "dom"],
+    "target": "es2015",
+    "noEmit": true,
+    "moduleResolution": "bundler"
   }
 }

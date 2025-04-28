@@ -2,15 +2,22 @@
 
 import chalk from 'chalk'
 
-import TokensStreamBuffer from './tokens-sstream-buffer.ts'
+import TokensStreamBuffer from './tokens-stream-buffer.ts'
 import MarkdownStreamParserStateMachine from './state-machine/markdown-state-machine.ts'
 
 export default class MarkdownStreamParser {
     static instances = new Map()
+    tokensStreamProcessor: TokensStreamBuffer
+    markdownStreamParser: MarkdownStreamParserStateMachine
+    unsubscribeFromProcessor: () => void
+    unsubscribeFromStateMachine: () => void
+    parsing: boolean
+    tokenParseListeners: Array<(token: any) => void>
+
 
     static getInstance(instanceId) {
         if (!MarkdownStreamParser.instances.has(instanceId)) {
-            MarkdownStreamParser.instances.set(instanceId, new MarkdownStreamParser(instanceId))    // Save the instance, ensure it is available statically
+            MarkdownStreamParser.instances.set(instanceId, new MarkdownStreamParser())    // Save the instance, ensure it is available statically
         }
 
         console.info(`${chalk.blue('AiStreamParser ->')} class.MarkdownStreamParser::${chalk.green('getInstance')}::instanceId: ${instanceId}, instances: ${MarkdownStreamParser.instances}`)

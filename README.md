@@ -1,3 +1,9 @@
+
+### This project is an open-ended research on how to parse LLM-produced streams in the most robust and efficient way.
+
+More details at the end of this document.
+
+
 # @lixpi/markdown-stream-parser
 
 A library designed to incrementally parse Markdown text from a stream of tokens.
@@ -7,6 +13,7 @@ It's built to handle the ambiguities of LLM-generated streams, which often produ
 ***Please note that this project is in an early stage of development, so there are bugs and missing features.***
 
 Giving this repository a star ***★*** is a great way to encourage faster development!
+
 
 ## Installation
 
@@ -18,8 +25,6 @@ yarn add @lixpi/markdown-stream-parser
 
 Can be used on a backend or frontend, there's no rendering logic involved.
 
-
-## Usage
 
 ### Basic Concepts
 
@@ -34,6 +39,7 @@ Can be used on a backend or frontend, there's no rendering logic involved.
 - **Subscribing to Output:**
   Use `subscribeToTokenParse(listener)` to receive parsed segments as soon as they are available. Returns an unsubscribe function.
   The unsubscribe function takes no arguments.
+
 
 ## How to Use
 
@@ -145,6 +151,7 @@ The output is a series of objects containing the content of a parsed segment, th
 { status: 'END_STREAM' }
 ```
 
+
 ## Is that it? What am I supposed to do with that?
 
 Good question. You can use this stream to render styled content in your application in real time. Having a `segment type` and `inline styles` is enough to style it however you want.
@@ -157,39 +164,61 @@ But it will **always remain `render-agnostic`** - whatever you use to render you
 
 ## Features
 
-*   **Stream Processing:** Handles incoming text chunks incrementally.
-*   **Markdown Syntax:** Parses common Markdown elements:
+- [x] Headers (`# H1`, `## H2`, etc.)
+  - [ ] //TODO inline styles for headers
+- [x] Paragraphs
+- [x] Inline styles
+  - [x] Inline Italic (`*text*`)
+  - [x] Inline Bold (`**text**`)
+  - [x] Inline Bold & Italic (`***text***`)
+  - [x] Inline Strikethrough (`~~text~~`)
+  - [x] Inline Code (`` `code` ``)
+- [x] Blockquotes (`> quote`)
+- [x] Code Blocks (```` ```code-block``` ````) with language detection
+- [ ] //TODO: PRIORITY: Ordered Lists (`1. item`)
+- [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`)
+- [ ] //TODO: Task Lists (`- [ ] item`)
+- [ ] //TODO: PRIORITY: Tables
+- [ ] //TODO: PRIORITY: Links (`[text](url)`)
+- [ ] //TODO: PRIORITY: Images (`![alt](url)`)
+- [ ] //TODO: Horizontal Rules (`---`, `***`, `___`)
+- [ ] //TODO: Footnotes
+- [ ] //TODO: HTML blocks
+- [ ] //TODO: Escaping (`\*literal asterisks\*`)
+- [ ] //TODO: Automatic Links (`<http://example.com>`)
+- [ ] //TODO: Emoji (`:smile:`)
+- [ ] //TODO: Superscript (`x^2^`)
+- [ ] //TODO: Subscript (`H~2~O`)
 
-    - [x] Headers (`# H1`, `## H2`, etc.)
-    - [x] Paragraphs
-    - [x] Code Blocks (```` ```code-block``` ````) with language detection
-    - [x] Inline Italic (`*text*`)
-    - [x] Inline Bold (`**text**`)
-    - [x] Inline Bold & Italic (`***text***`)
-    - [x] Inline Strikethrough (`~~text~~`)
-    - [x] Inline Code (`` `code` ``)
-    - [x] Blockquotes (`> quote`)
-    - [ ] Ordered Lists (`1. item`)
-    - [ ] Unordered Lists (`- item`, `* item`, `+ item`)
-    - [ ] Task Lists (`- [ ] item`)
-    - [ ] Links (`[text](url)`)
-    - [ ] Images (`![alt](url)`)
-    - [ ] Horizontal Rules (`---`, `***`, `___`)
-    - [ ] Tables
-    - [ ] Footnotes
-    - [ ] HTML blocks
-    - [ ] Escaping (`\*literal asterisks\*`)
-    - [ ] Automatic Links (`<http://example.com>`)
-    - [ ] Emoji (`:smile:`)
-    - [ ] Superscript (`x^2^`)
-    - [ ] Subscript (`H~2~O`)
 
-*   **State Machine:** Robust (*yet in early dev stage :)*) parsing logic based on a finite state machine.
-*   **Event-Driven:** Emits events for each parsed segment, allowing real-time processing or rendering.
-*   **Instance Management:** Supports multiple parser instances if needed.
-*   **Token-by-Token Processing:** Transforms incoming text streams into styled output chunks, applying markdown styles as soon as they are detected.
+## Running examples
+
+To try out the parser with example streams, look inside the `llm-streams-examples` directory. This folder contains real LLM responses collected from various providers. Each response has two versions:
+
+- `*.json`: An array of items used for streaming
+- `*.txt`: The same stream combined into a single file
+
+Having the `*.txt` version is handy for visual comparison and debugging the parser.
+
+
+Inside the repository root dir run:
+
+1. Start the Docker container:
+   ```bash
+   docker compose up -d
+   ```
+
+2. Run the debug parser inside the container:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser --file=<file-name>.json
+   ```
+
+   Replace `<file-name>` with the name of one of the `.json` files located in the `llm-streams-examples` directory (this directory is mounted from your host machine into the container).
+
+This will execute the parser against the selected example stream and print parsed segments to the console.
 
 ---
+
 
 ## How It Works
 
@@ -264,7 +293,6 @@ stateDiagram-v2
 
 Alternatively parser state transitions can be represented like this:
 
-
 ```mermaid
 stateDiagram-v2
     direction LR
@@ -311,14 +339,13 @@ stateDiagram-v2
     emit --> [*]: end of stream
 ```
 
-
 #### 4: Publish/Subscribe Pattern
 
-The parser uses a **publish/subscribe (pub/sub) architecture** to decouple the flow of data from its consumption. This design enables you to feed data into the parser and independently subscribe to a stream of parsed output.
+The parser uses a **publish/subscribe architecture** to decouple the flow of data from its consumption. This design enables you to feed data into the parser and independently subscribe to a stream of parsed output.
 
 ```mermaid
 flowchart TD
-    A[Input Tokens] -->|buffer| B(TokensStreamProcessor)
+    A[Input Tokens] -->|buffer| B(TokensStreamBuffer)
     B -->|segment| C(MarkdownStreamParserStateMachine)
     C -->|buffer| D(MarkdownStreamParser)
     D -->|notify parsed segment| E[Subscribers]
@@ -339,41 +366,13 @@ This design enables **efficient parallel processing** of multiple independent st
 
 #### 6. Regex-driven Parsing
 
-This project uses a **regex-driven approach** for parsing, which—while sometimes debated—has proven to be the most reliable method for handling the ambiguity and imperfections typical of Markdown generated by LLMs. LLM responses frequently contain malformed or incomplete Markdown, and robust rendering requires a parsing strategy that can gracefully handle these inconsistencies without introducing rendering glitches.
+This project uses a **regex-driven approach** for parsing segments, which while sometimes **debated** so far allowed to achieve the most stable result out of previous attempts of dealing with the ambiguity and imperfections of Markdown generated by LLMs which frequently contain malformed or incomplete Markdown, and robust rendering requires a parsing strategy that can gracefully handle these inconsistencies without introducing rendering glitches.
 
 For each markup type, we define a set of regex rules to detect both full matches (e.g., single-word styles) and partial matches, which indicate the start or end of a style applied across multiple words. This enables the parser to incrementally and accurately apply styles, even when the Markdown is fragmented or nonstandard.
 
 Although running complex regexes can be less efficient, we prioritize correct rendering over raw performance. In typical browser scenarios, the performance impact is negligible. On the server, where thousands of streams may be parsed in parallel, there is some overhead, but the benefits in stability and output quality outweigh the costs.
 
 We are continuously evaluating this approach and exploring whether more advanced data structures could further improve accuracy or performance. This remains an active area of development.
-
-
-## Running examples
-
-To try out the parser with example streams, look inside the `llm-streams-examples` directory. This folder contains real LLM responses collected from various providers. Each response has two versions:
-
-- `*.json`: An array of items used for streaming
-- `*.txt`: The same stream combined into a single file
-
-Having the `*.txt` version is handy for visual comparison and debugging the parser.
-
-
-Inside the repository root dir run:
-
-1. **Start the Docker container:**
-   ```bash
-   docker compose up -d
-   ```
-
-2. **Run the debug parser inside the container:**
-   ```bash
-   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser --file=<file-name>.json
-   ```
-
-   Replace `<file-name>` with the name of one of the `.json` files located in the `llm-streams-examples` directory (this directory is mounted from your host machine into the container).
-
-This will execute the parser against the selected example stream and print parsed segments to the console.
-
 
 ---
 
@@ -384,34 +383,49 @@ This will execute the parser against the selected example stream and print parse
 
 - **Inline styles for headings** are not implemented yet. Therefore, when a stream contains something like `### Title **with bold word**`, only the heading part will be detected. This should be fixed in the near future.
 
-
-## FAQs / Troubleshooting
-
-**Q:** Why do I get an error when calling `parseToken` before `startParsing`?
-**A:** You must call `startParsing()` before feeding tokens.
-
-
-**Q:** How do I unsubscribe from output events?
-**A:** The function returned by `subscribeToTokenParse` will unsubscribe your listener. It takes no arguments.
-
-
-**Q:** Can I parse multiple streams in parallel?
-**A:** Yes, use different `instanceId` values for each stream.
-
-
-**Q:** Is there a way to enable debug logging?
-**A:** Set the `IS_DEBUG` flag in `markdownStateMachine.ts` to `true` to enable verbose debug output.
-
 ---
+
+
+## Future Plans and Directions
+
+### Exploration of Alternative Parsing Architectures
+
+While our current regex-based approach provides good results for LLM-generated Markdown streams, we recognize that established parsing libraries may offer additional benefits for long-term scalability and maintenance. We're evaluating:
+
+- **Tree-sitter**
+  - A mature incremental parsing system adopted by Neovim and formerly by Atom
+  - Offers syntax recovery parsing with efficient incremental updates
+  - References:
+    - [Tree-sitter Documentation](https://tree-sitter.github.io/)
+    - [Tree-sitter repo](https://github.com/tree-sitter/tree-sitter)
+    - [Node.js Tree-sitter repo](https://github.com/tree-sitter/node-tree-sitter)
+    - [A Markdown parser for tree-sitter](https://github.com/tree-sitter-grammars/tree-sitter-markdown)
+
+- **Lezer**
+  - Modern incremental parser system developed by the authors of **ProseMirror** && **CodeMirror**...
+  - Designed specifically for editor use cases, also supports syntax recovery, though not sure if as advanced as `Tree-sitter`
+  - References:
+    - [Lezer Documentation](https://lezer.codemirror.net)
+    - [Lezer Markdown Grammar](https://github.com/lezer-parser/markdown)
+
+1. These parsers can effectively handle partial Markdown syntax across stream chunks
+2. Our L1 buffer concept could be integrated with these parsers to maintain the current user experience
+
+
+**Community feedback and contributions are especially welcome regarding these architectural considerations, as diverse use cases will help inform the best approach.**
+Please feel free to share your thoughts in **[discussions](https://github.com/Lixpi/markdown-stream-parser/discussions)**.
+
 
 ## Contributions and Roadmap
 
 - **Contributions:**
   PRs and issues are *welcome*!
 
+
 - **Roadmap:**
+  - Tests...
   - Support for the missing markdown features listed earlier.
-  - Performance optimizations for very large streams.
+  - Performance optimizations
   - Build an AST (abstract syntax tree) model to represent the parsed stream in memory
 
 ---
