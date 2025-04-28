@@ -278,8 +278,8 @@ stateDiagram-v2
     processInlineStylesGroup --> emit: emit styled segment
     emit --> routing: next segment
 
-    routing --> handleMalformedInline: malformed style (e.g., missing closing marker + new line symbol that denotes beginning of a new block)
-    handleMalformedInline --> emit: emit unstyled segment
+    routing --> handleMalformedSyntax: malformed style (e.g., missing closing marker + new line symbol that denotes beginning of a new block)
+    handleMalformedSyntax --> emit: emit unstyled segment
     emit --> routing: next segment
 
     routing --> [*]: end of stream
