@@ -43,7 +43,16 @@ export const REGEX: Record<string, RegExp> = {
     codeBlockEndMarker:                       /(?<!`)```(?!`)\s*((\n|\\n){1,})/,      // [```\n\n]  or [``` \n\n] or [ ``` \n\n] or [ ``` \n]
 }
 
-export const INLINE_STYLE_GROUPS = {
+export const INLINE_STYLE_GROUPS: Record<string, {
+    name: string;
+    regex: {
+        partialOrFull: RegExp;
+        full: RegExp;
+        partialStart: RegExp;
+        partialEnd: RegExp;
+    };
+    styles: string[];
+}> = {
     italic: {
         name: 'italic',
         regex: {

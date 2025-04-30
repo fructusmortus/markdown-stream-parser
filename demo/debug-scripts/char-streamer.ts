@@ -2,7 +2,7 @@ import fs from 'fs'
 
 import { log, info, infoStr, warn, err } from './debug-tools.ts'
 
-import MarkdownStreamParser from '../src/markdown-stream-parser.ts'
+import MarkdownStreamParser from '../../src/markdown-stream-parser.ts'
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
@@ -23,7 +23,7 @@ if (!fileName) {
     throw new Error('Missing required argument: --file=<path-to-file>');
 }
 
-const sourceFile = `/usr/src/service/debug-scripts/llm-streams-examples/${fileName}`;
+const sourceFile = `/usr/src/service/demo/llm-streams-examples/${fileName}`;
 
 const markdownStreamParser = MarkdownStreamParser.getInstance(fileName)
 

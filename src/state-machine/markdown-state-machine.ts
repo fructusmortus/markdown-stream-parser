@@ -4,7 +4,7 @@ import { INLINE_STYLE_GROUPS } from './constants.ts'
 import { evaluationRunner } from './evaluations.ts'
 import { actionRunner } from './actions.ts'
 
-import type { ActionParams } from './actions.ts'
+import type { ActionParams, ParsedSegment } from './actions.ts'
 import type { EvaluationEvent } from './evaluations.ts'
 
 const IS_DEBUG = false
@@ -68,7 +68,7 @@ const initialContext = (): Context => ({
 export default class TextStreamStateMachine {
     context: Context
     currentState: string
-    parsedSegmentListeners: Array<(segment: string) => void>    // Store subscriber functions
+    parsedSegmentListeners: Array<(blockContent: ParsedSegment) => void>    // Store subscriber functions
 
     constructor() {
         this.context = initialContext()
@@ -78,28 +78,28 @@ export default class TextStreamStateMachine {
     }
 
     // Allow components to subscribe to parsed segment completion
-    subscribeToParsedSegment(listener) {
+    subscribeToParsedSegment(listener: (blockContent: ParsedSegment) => void) {
         this.parsedSegmentListeners.push(listener)
         return () => this.unsubscribeFromParsedSegment(listener)
     }
 
     // Allow components to unsubscribe from parsed segment completion
-    unsubscribeFromParsedSegment(listener) {
+    unsubscribeFromParsedSegment(listener: (blockContent: ParsedSegment) => void) {
         this.parsedSegmentListeners = this.parsedSegmentListeners.filter(l => l !== listener)
     }
 
     // Internal method to notify all parsed segment complete listeners
-    notifyParsedSegment(segment) {
-        this.parsedSegmentListeners.forEach(listener => listener(segment))
+    notifyParsedSegment(blockContent: ParsedSegment) {
+        this.parsedSegmentListeners.forEach(listener => listener(blockContent))
     }
 
     // Evaluates the current state based on the event and parameters.
-    evaluate(evaluationName, {event, params}: { event: EvaluationEvent, params: ActionParams}): boolean {
+    evaluate(evaluationName: string, {event, params}: { event: EvaluationEvent, params: ActionParams}): boolean {
         return evaluationRunner(evaluationName, this.context, event, params)
     }
 
     // Actions to be performed on state transitions. Mutates the context !!!
-    act(actionName, {event, params}: { event: any, params: ActionParams}): void {
+    act(actionName: string, {event, params}: { event: any, params: ActionParams}): void {
         // Merging context with the result of the action
         this.context = {
             ...this.context,
@@ -108,7 +108,7 @@ export default class TextStreamStateMachine {
     }
 
     // Transition to a new state
-    transition(state): void {
+    transition(state: string): void {
         this.currentState = state
     }
 
@@ -117,7 +117,7 @@ export default class TextStreamStateMachine {
         this.currentState = STATES.routing
     }
 
-    checkForNewLine(segment, {resetParser = false, transitionTo = STATES.routing }) {
+    checkForNewLine(segment: string, {resetParser = false, transitionTo = STATES.routing }: {resetParser?: boolean, transitionTo?: string}) {
         if (
             this.evaluate('ends::newLine', { event: { segment }, params: {} })
         ) {
@@ -128,7 +128,7 @@ export default class TextStreamStateMachine {
         }
     }
 
-    processHeader(segment) {
+    processHeader(segment: string) {
         this.act('buffer::blockContent', { event: { segment }, params: {} })
 
         // Skip the first emit if the styling marker segment is being processed
@@ -150,7 +150,7 @@ export default class TextStreamStateMachine {
         this.checkForNewLine(segment, { resetParser: true, transitionTo: STATES.routing })
     }
 
-    processInlineStylesGroup(segment, styleGroup) {
+    processInlineStylesGroup(segment: string, styleGroup: string) {
         if (this.evaluate('is::inlineStyleMarkerFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS[styleGroup].name } })) {
             this.act('apply::inlineTextStyle', {
                 event: { segment },
@@ -314,7 +314,7 @@ export default class TextStreamStateMachine {
         this.checkForNewLine(segment, { resetParser: false, transitionTo: STATES.routing })
     }
 
-    processCodeBlock(segment) {
+    processCodeBlock(segment: string) {
         // Skip the first emit if the styling marker segment is being processed
         if(this.evaluate('is::processingStylingMarkerSegment', { event: {}, params: {} })) {
             // Reset the styling marker segment flag after the first emit
@@ -410,7 +410,7 @@ export default class TextStreamStateMachine {
         }
     }
 
-    processParagraph(segment) {
+    processParagraph(segment: string) {
         this.act('buffer::blockContent', { event: { segment }, params: {} })
         this.act('emit::parsedSegment', {
             event: { segment },
@@ -429,7 +429,7 @@ export default class TextStreamStateMachine {
     }
 
     // Parses the stream of text: feeds characters into state machine and records transitions.
-    parseSegment(segment) {
+    parseSegment(segment: string) {
         IS_DEBUG && console.log('------------------------------------------------------------------------------------------------------------------------STATE:', this.currentState)
         if(this.currentState === STATES.routing) {
             if (

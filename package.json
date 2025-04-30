@@ -4,13 +4,14 @@
     "version": "0.0.2",
     "type": "module",
     "scripts": {
-        "dev": "#TODO",
-        "build": "#TODO",
-        "debug-parser": "node ./debug-scripts/char-streamer.ts"
+        "build": "tsup src/markdown-stream-parser.ts --dts --format esm,cjs --minify --out-dir build",
+        "debug-parser": "node ./demo/debug-scripts/char-streamer.ts",
+        "prepare": "pnpm run build"
     },
     "devDependencies": {
         "chalk": "*",
-        "typescript": "*"
+        "typescript": "*",
+        "tsup": "^8.0.0"
     },
     "dependencies": {
     },

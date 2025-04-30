@@ -1,0 +1,42 @@
+# NATS Authentication Callout Configuration: Understanding `xkey`
+
+In NATS authentication callout configuration, the `xkey` is an important element of the cryptographic security mechanism used to verify the authenticity of authentication callout requests and responses.
+
+## What is an xkey?
+
+The `xkey` (external key) is a shared secret key that's used to sign and verify JSON Web Tokens (JWTs) exchanged between the NATS server and an external authentication service. This ensures that:
+
+1. The NATS server can verify that responses come from the authorized authentication service
+2. The authentication service can verify that requests originate from the legitimate NATS server
+
+## How xkey is Used in Configuration
+
+In a NATS server configuration, you would typically define the xkey in the auth_callout section:
+
+```json
+authorization {
+  auth_callout {
+    issuer: "issuer_name"
+    xkey: "a_strong_shared_secret_key_here"
+    url: "http://auth-service:8080/auth"
+    // other configuration options...
+  }
+}
+```
+
+## Security Considerations
+
+- The xkey should be treated as a sensitive secret
+- It should be sufficiently long and complex to resist brute force attacks
+- Best practice is to store it in environment variables or a secure vault rather than in plaintext config files
+- Both the NATS server and authentication service must use the identical xkey value
+
+## Authentication Flow with xkey
+
+1. When a client connects, NATS creates a JWT signed with the xkey
+2. This JWT is sent to the external authentication service
+3. The auth service verifies the JWT signature using the same xkey
+4. The auth service responds with a signed JWT (using the same xkey)
+5. NATS verifies this response using the xkey before granting access
+
+This bidirectional verification creates a secure authentication channel between NATS and your custom authentication logic.

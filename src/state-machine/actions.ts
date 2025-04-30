@@ -20,7 +20,7 @@ type MatchObject = {
 
 export type ParsedSegment = {
     segment: string
-    content: string
+    content?: string
     type: string
     styles: any[]
     language?: string
@@ -66,8 +66,8 @@ const setHeader = (
     context: Context,
     event: ActionEvent,
     params: ActionParams
-    s) => {
-    const match = event.segment.match(REGEX.headerMarker);
+) => {
+    const match = (event.segment ?? '').match(REGEX.headerMarker);
     if (match) {
         const hashes = match[1]
         const headerFirstSegment = match[2] // The first segment of the header
@@ -86,6 +86,7 @@ const applyInlineTextStyle = (
     params: ActionParams
 ): Partial<Context> => {
     const { styleGroup, match } = params;
+    if (!styleGroup) return {};
 
     let matchObject: MatchObject = {
         fullMatch: '',
@@ -108,7 +109,7 @@ const applyInlineTextStyle = (
                 content: content || '',
                 closingStyleMarker: closingStyleMarker || '',
                 postfixedContent: postfixedContent || ''
-            }))(event.segment.match(INLINE_STYLE_GROUPS[styleGroup].regex.full) || []);
+            }))((event.segment ?? '').match(INLINE_STYLE_GROUPS[styleGroup].regex.full) || []);
             break;
         case 'partial::start':
             matchObject = (([
@@ -121,7 +122,7 @@ const applyInlineTextStyle = (
                 prefixedContent: prefixedContent || '',
                 openingStyleMarker: openingStyleMarker || '',
                 content: content || '',
-            }))(event.segment.match(INLINE_STYLE_GROUPS[styleGroup].regex.partialStart) || []);
+            }))((event.segment ?? '').match(INLINE_STYLE_GROUPS[styleGroup].regex.partialStart) || []);
             break;
         case 'partial::end':
             matchObject = (([
@@ -134,7 +135,7 @@ const applyInlineTextStyle = (
                 content: content || '',
                 closingStyleMarker: closingStyleMarker || '',
                 postfixedContent: postfixedContent || ''
-            }))(event.segment.match(INLINE_STYLE_GROUPS[styleGroup].regex.partialEnd) || []);
+            }))((event.segment ?? '').match(INLINE_STYLE_GROUPS[styleGroup].regex.partialEnd) || []);
             break;
     }
 
@@ -176,7 +177,7 @@ const setCodeBlock = (
         backticks: backticks || '',
         codeLanguage: codeLanguage || '',
         postfixedContent: postfixedContent || '',
-    }))(event.segment.match(REGEX.codeBlockStartMarker) || []);
+    }))((event.segment ?? '').match(REGEX.codeBlockStartMarker) || []);
 
     return {
         blockType: BLOCK_TYPES.codeBlock,
@@ -198,7 +199,7 @@ const bufferBlockContent = (
     event: ActionEvent,
     params: ActionParams
 ): Partial<Context> => ({
-    blockContentBuffer: context.blockContentBuffer + event.segment
+    blockContentBuffer: context.blockContentBuffer + (event.segment ?? '')
 })
 
 const bufferCodeBlockSegments = (
@@ -206,7 +207,7 @@ const bufferCodeBlockSegments = (
     event: ActionEvent,
     params: ActionParams
 ): Partial<Context> => ({
-    codeBlockSegmentsBuffer: [...context.codeBlockSegmentsBuffer, event.segment]
+    codeBlockSegmentsBuffer: [...context.codeBlockSegmentsBuffer, event.segment ?? '']
 })
 
 const resetBlockContentBuffer = (
@@ -261,7 +262,7 @@ const emitParsedSegment = (
         isDebug = false
     } = params;
 
-    const segment = isTruncateTrailingNewLine ? truncateTrailingNewLine(event.segment) : event.segment;
+    const segment = isTruncateTrailingNewLine ? truncateTrailingNewLine(event.segment ?? '') : (event.segment ?? '');
     const styles = skipStyles ? [] : context.styles;
 
     const blockContent: ParsedSegment = {
@@ -286,7 +287,7 @@ const emitParsedSegment = (
     }
 }
 
-const ACTIONS = {
+const ACTIONS: Record<string, Function> = {
     'set::header': setHeader,
     'set::isProcessingNewLine': setIsProcessingNewLine,
     'set::isProcessingStylingMarkerSegment': setIsProcessingStylingMarkerSegment,
@@ -309,10 +310,14 @@ const ACTIONS = {
     'debug::parsedSegment': debugParsedSegment,
 }
 
-export const actionRunner = (actionName, context, event, params: ActionParams) => {
+export const actionRunner = (
+    actionName: string, // Accept any string
+    context: Context,
+    event: any,
+    params: ActionParams
+) => {
     if (ACTIONS.hasOwnProperty(actionName) === false) {
         throw new Error(`No action found for: ${actionName}`);
     }
-
     return ACTIONS[actionName](context, event, params);
 }

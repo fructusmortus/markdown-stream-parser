@@ -1,7 +1,7 @@
 services:
     lixpi-markdown-stream-parser-demo:
         container_name: lixpi-markdown-stream-parser-demo
-        restart: always
+        # restart: always
         image: lixpi/markdown-stream-parser-demo
         build:
             dockerfile: Dockerfile
@@ -13,9 +13,13 @@ services:
             # Node.js config, specifically to enable all experimental TypeScript features
             NODE_OPTIONS: '--trace-deprecation --abort-on-uncaught-exception --trace-warnings --disable-warning=ExperimentalWarning --experimental-transform-types'
         volumes:
-            - ./debug-scripts/:/usr/src/service/debug-scripts/:cached
+            - ./demo/:/usr/src/service/demo/:cached
             - ./src/:/usr/src/service/src/:cached
+            - ./build/:/usr/src/service/build/:cached
             - ./package.json/:/usr/src/service/package.json:cached
+            - ./tsconfig.json/:/usr/src/service/tsconfig.json:cached
+        ports:
+            - 5173:5173
 
         working_dir: /usr/src/service
 

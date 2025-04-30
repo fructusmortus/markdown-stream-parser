@@ -39,16 +39,16 @@ export default class TokensStreamBuffer {
         }
     }
 
-    private notifyWordCompletion(word) {
+    private notifyWordCompletion(word: string) {
         this.wordCompleteListeners.forEach(listener => listener(word))
     }
 
-    public subscribeToSegmentCompletion(listener) {
+    public subscribeToSegmentCompletion(listener: (word: string) => void) {
         this.wordCompleteListeners.push(listener)
         return () => this.unsubscribeFromSegmentCompletion(listener)
     }
 
-    public unsubscribeFromSegmentCompletion(listener) {
+    public unsubscribeFromSegmentCompletion(listener: (word: string) => void) {
         this.wordCompleteListeners = this.wordCompleteListeners.filter(l => l !== listener)
     }
 
@@ -72,7 +72,7 @@ export default class TokensStreamBuffer {
         return this._buffer
     }
 
-    public receiveChunk(chunk): void {
+    public receiveChunk(chunk: string): void {
         if (typeof chunk !== 'string') {
             throw new Error('Chunk must be a string.')
         }

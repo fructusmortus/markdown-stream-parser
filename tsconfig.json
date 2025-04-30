@@ -1,9 +1,20 @@
 {
   "compilerOptions": {
     "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
     "lib": ["es2015", "dom"],
     "target": "es2015",
-    "noEmit": true,
-    "moduleResolution": "bundler"
-  }
+    "module": "esnext",
+    "declaration": true,
+    "declarationDir": "./build/types",
+    "outDir": "./build",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "build", "demo/debug-scripts"]
 }
