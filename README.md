@@ -4,7 +4,7 @@ A library designed to incrementally parse Markdown text from a stream of tokens.
 
 It's built to handle the ambiguities of LLM-generated streams, which often produce imperfect or invalid Markdown. It combines a finite state machine with regex patterns to determine the best match for each segment.
 
-***Please note that this project is in an early stage of development, so there are MANY bugs and missing features.***
+***<span style="color:#e7000b">Please note that this project is in an early stage of development, so there are MANY bugs and missing features.</span>***
 
 Giving this repository a star ***★*** is a great way to encourage faster development!
 
