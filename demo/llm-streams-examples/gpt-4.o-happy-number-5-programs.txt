@@ -1,0 +1,91 @@
+Sure! A *happy number* is a number defined by the following process: Starting with any positive integer, replace the number by the sum of the squares of its digits, and repeat the process until the number equals 1 (where it will stay), or it loops endlessly in a cycle which does not include 1. Those numbers for which this process ends in 1 are happy numbers.
+
+Here is how you can implement this in **five exotic programming languages**:
+
+---
+
+#### **1. Brainfuck**
+
+```brainfuck
+++++++++++[>+>+++>+++++++>++++++++++<<<<-]>>>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.
+```
+
+> This doesn't implement the algorithm, but due to Brainfuck's limited expressiveness, evaluating a happy number directly is not practical. Instead, this Brainfuck code prints "Hello World!". Consider Brainfuck more of a theoretical exercise.
+
+---
+
+#### **2. Befunge**
+
+```befunge
+&>:1-:v v *_$:1-:| 
+ ^    _$>\:2*+55+*g
+ >0"Happy!"v  ^   <
+ ^   $"!yppaH"<    
+```
+
+> This quirky program in **Befunge** takes an input number and checks if it's a happy number. The logic is constrained by the 2D nature of the language, so it’s a bit shaped more like a flowchart than typical code.
+
+---
+
+#### **3. J (Array Programming)**
+
+```j
+happy =: 3 : '1 e. (#~ 1 = +/@:*:)"0^:_ ]'
+```
+
+Usage:
+
+```j
+happy 19
+```
+
+> This J function checks if a number is happy by repeatedly squaring digits and summing them until it reaches 1 or loops.
+
+---
+
+#### **4. APL**
+
+```apl
+happy ← {
+    seen ← ⍬
+    n ← ⍵
+    {
+        n ∊ seen: 0
+        n = 1: 1
+        seen ← seen , n
+        n ← +/ (⍎¨ ⍕n) * 2
+        ⍵ ∇ n
+    } n
+}
+```
+
+Usage:
+
+```apl
+happy 19
+```
+
+> APL is a concise symbolic language. This code tracks seen values to detect cycles.
+
+---
+
+#### **5. Raku (formerly Perl 6)**
+
+```raku
+sub is-happy(Int $n) {
+    my %seen;
+    while $n != 1 && !$n{ $n }++ {
+        $n = [+] $n.comb.map({ $_ ** 2 });
+    }
+    return $n == 1;
+}
+
+say is-happy(19);  # True
+say is-happy(4);   # False
+```
+
+> Raku has great built-in support for concise and expressive operations. This is a complete implementation of the happy number check.
+
+---
+
+If you’d like the same logic expressed in one of these languages in more detail, or want to see other exotic languages (like Whitespace, Malbolge, or Piet), feel free to ask!

@@ -1,12 +1,87 @@
 [
   {
-    "base": "2025-04-07T23:59:06.143Z",
-    "json": "/llm-streams-examples/2025-04-07T23:59:06.143Z.json",
-    "txt": "/llm-streams-examples/2025-04-07T23:59:06.143Z.txt"
+    "base": "claude-3.5-1-quantum-physics",
+    "json": "/llm-streams-examples/claude-3.5-1-quantum-physics.json",
+    "txt": "/llm-streams-examples/claude-3.5-1-quantum-physics.txt"
   },
   {
-    "base": "2025-04-09T23:05:36.718Z",
-    "json": "/llm-streams-examples/2025-04-09T23:05:36.718Z.json",
-    "txt": "/llm-streams-examples/2025-04-09T23:05:36.718Z.txt"
+    "base": "claude-3.5-long-regex",
+    "json": "/llm-streams-examples/claude-3.5-long-regex.json",
+    "txt": "/llm-streams-examples/claude-3.5-long-regex.txt"
+  },
+  {
+    "base": "claude-3.5-mythical-people",
+    "json": "/llm-streams-examples/claude-3.5-mythical-people.json",
+    "txt": "/llm-streams-examples/claude-3.5-mythical-people.txt"
+  },
+  {
+    "base": "claude-3.5-very-long-regex",
+    "json": "/llm-streams-examples/claude-3.5-very-long-regex.json",
+    "txt": "/llm-streams-examples/claude-3.5-very-long-regex.txt"
+  },
+  {
+    "base": "claude-3.7-complex-regex",
+    "json": "/llm-streams-examples/claude-3.7-complex-regex.json",
+    "txt": "/llm-streams-examples/claude-3.7-complex-regex.txt"
+  },
+  {
+    "base": "claude-3.7-happy-number-5-programs",
+    "json": "/llm-streams-examples/claude-3.7-happy-number-5-programs.json",
+    "txt": "/llm-streams-examples/claude-3.7-happy-number-5-programs.txt"
+  },
+  {
+    "base": "claude-3.7-history-of-cats",
+    "json": "/llm-streams-examples/claude-3.7-history-of-cats.json",
+    "txt": "/llm-streams-examples/claude-3.7-history-of-cats.txt"
+  },
+  {
+    "base": "claude-3.7-markdown-with-nested-code-block",
+    "json": "/llm-streams-examples/claude-3.7-markdown-with-nested-code-block.json",
+    "txt": "/llm-streams-examples/claude-3.7-markdown-with-nested-code-block.txt"
+  },
+  {
+    "base": "claude-3.7-quantum-physics",
+    "json": "/llm-streams-examples/claude-3.7-quantum-physics.json",
+    "txt": "/llm-streams-examples/claude-3.7-quantum-physics.txt"
+  },
+  {
+    "base": "gpt-4.5-cat-coding",
+    "json": "/llm-streams-examples/gpt-4.5-cat-coding.json",
+    "txt": "/llm-streams-examples/gpt-4.5-cat-coding.txt"
+  },
+  {
+    "base": "gpt-4.5-quantum-physics",
+    "json": "/llm-streams-examples/gpt-4.5-quantum-physics.json",
+    "txt": "/llm-streams-examples/gpt-4.5-quantum-physics.txt"
+  },
+  {
+    "base": "gpt-4.o-cat-coding",
+    "json": "/llm-streams-examples/gpt-4.o-cat-coding.json",
+    "txt": "/llm-streams-examples/gpt-4.o-cat-coding.txt"
+  },
+  {
+    "base": "gpt-4.o-happy-number-5-programs",
+    "json": "/llm-streams-examples/gpt-4.o-happy-number-5-programs.json",
+    "txt": "/llm-streams-examples/gpt-4.o-happy-number-5-programs.txt"
+  },
+  {
+    "base": "gpt-4.o-history-of-cats",
+    "json": "/llm-streams-examples/gpt-4.o-history-of-cats.json",
+    "txt": "/llm-streams-examples/gpt-4.o-history-of-cats.txt"
+  },
+  {
+    "base": "gpt-4.o-immortal people",
+    "json": "/llm-streams-examples/gpt-4.o-immortal people.json",
+    "txt": "/llm-streams-examples/gpt-4.o-immortal people.txt"
+  },
+  {
+    "base": "x-BUG-claude-3.5-nested-code-blocks",
+    "json": "/llm-streams-examples/x-BUG-claude-3.5-nested-code-blocks.json",
+    "txt": "/llm-streams-examples/x-BUG-claude-3.5-nested-code-blocks.txt"
+  },
+  {
+    "base": "x-BUG-gpt-4.5-nested-code-blocks",
+    "json": "/llm-streams-examples/x-BUG-gpt-4.5-nested-code-blocks.json",
+    "txt": "/llm-streams-examples/x-BUG-gpt-4.5-nested-code-blocks.txt"
   }
 ]

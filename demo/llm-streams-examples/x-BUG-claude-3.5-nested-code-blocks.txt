@@ -1,0 +1,97 @@
+I'll help you create palindrome checker programs in 5 different languages. Each solution will include nested code blocks to demonstrate different approaches.
+
+##### Python Solution
+
+```python
+def is_palindrome(text):
+    """
+    Example usage:
+    ```python
+    result = is_palindrome("radar")  # True
+    result = is_palindrome("hello")  # False
+    ```
+    """
+    cleaned_text = ''.join(char.lower() for char in text if char.isalnum())
+    return cleaned_text == cleaned_text[::-1]
+```
+
+
+##### JavaScript Solution
+
+```javascript
+const isPalindrome = (text) => {
+    /*
+    Example usage:
+    ```javascript
+    const result1 = isPalindrome("radar");  // true
+    const result2 = isPalindrome("hello");  // false
+    ```
+    */
+    const cleanedText = text.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return cleanedText === [...cleanedText].reverse().join('');
+};
+```
+
+
+##### Java Solution
+
+```java
+public class PalindromeChecker {
+    public static boolean isPalindrome(String text) {
+        /*
+        Example usage:
+        ```java
+        boolean result1 = isPalindrome("radar");  // true
+        boolean result2 = isPalindrome("hello");  // false
+        ```
+        */
+        String cleanedText = text.toLowerCase().replaceAll("[^a-z0-9]", "");
+        return cleanedText.equals(new StringBuilder(cleanedText).reverse().toString());
+    }
+}
+```
+
+
+##### Ruby Solution
+
+```ruby
+def is_palindrome?(text)
+    # Example usage:
+    # ```ruby
+    # result1 = is_palindrome?("radar")  # true
+    # result2 = is_palindrome?("hello")  # false
+    # ```
+    cleaned_text = text.downcase.gsub(/[^a-z0-9]/, '')
+    cleaned_text == cleaned_text.reverse
+end
+```
+
+
+##### Go Solution
+
+```go
+func IsPalindrome(text string) bool {
+    /*
+    Example usage:
+    ```go
+    result1 := IsPalindrome("radar")  // true
+    result2 := IsPalindrome("hello")  // false
+    ```
+    */
+    cleanedText := strings.ToLower(regexp.MustCompile(`[^a-z0-9]`).ReplaceAllString(text, ""))
+    for i := 0; i < len(cleanedText)/2; i++ {
+        if cleanedText[i] != cleanedText[len(cleanedText)-1-i] {
+            return false
+        }
+    }
+    return true
+}
+```
+
+Each solution includes:
+- Main function implementation
+- Nested example usage in comments
+- Text cleaning (converting to lowercase and removing non-alphanumeric characters)
+- Palindrome checking logic
+
+The solutions are efficient and handle various edge cases like mixed case, spaces, and special characters.

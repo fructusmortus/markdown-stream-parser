@@ -4,18 +4,22 @@ A library designed to incrementally parse Markdown text from a stream of tokens.
 
 It's built to handle the ambiguities of LLM-generated streams, which often produce imperfect or invalid Markdown. It combines a finite state machine with regex patterns to determine the best match for each segment.
 
-***Please note that this project is in an early stage of development, so there are bugs and missing features.***
+***Please note that this project is in an early stage of development, so there are MANY bugs and missing features.***
 
 Giving this repository a star ***★*** is a great way to encourage faster development!
 
+### DEMO: [markdown-stream-parser.lixpi.org](https://markdown-stream-parser.lixpi.org)
 
 ## Installation
 
 ```bash
-pnpm install @lixpi/markdown-stream-parser
-npm install @lixpi/markdown-stream-parser
-yarn add @lixpi/markdown-stream-parser
+<npm package is comming soon>
+
+For now just clone the repository and use
+
+import MarkdownStreamParser from '../src/markdown-stream-parser.ts'
 ```
+
 
 Can be used on a backend or frontend, there's no rendering logic involved.
 
@@ -167,8 +171,8 @@ But it will **always remain `render-agnostic`** - whatever you use to render you
   - [x] Inline Bold & Italic (`***text***`)
   - [x] Inline Strikethrough (`~~text~~`)
   - [x] Inline Code (`` `code` ``)
-- [x] Blockquotes (`> quote`)
 - [x] Code Blocks (```` ```code-block``` ````) with language detection
+- [ ] Blockquotes (`> quote`)
 - [ ] //TODO: PRIORITY: Ordered Lists (`1. item`)
 - [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`)
 - [ ] //TODO: Task Lists (`- [ ] item`)
@@ -223,9 +227,9 @@ This will execute the parser against the selected example stream and print parse
 The parser uses a two-level buffering system:
 
 1. **L1 Buffer (TokensStreamBuffer)**: Accumulates tokens until a complete segment (word, whitespace, punctuation) forms
-2. **L2 Buffer (Parser)**: Analyzes segments to detect markdown patterns and apply styles
+2. **L2 Buffer (inside the Parser)**: Analyzes segments to detect markdown patterns and apply styles
 
-This approach ensures reliable style detection even when markdown syntax is split across multiple incoming chunks.
+This approach ensures style detection even when markdown syntax is split across multiple incoming chunks.
 
 ```mermaid
 flowchart LR
@@ -239,15 +243,15 @@ flowchart LR
 
 Markdown consists of two fundamental components:
 
-1. **Block-level elements** (paragraphs, headings, lists) which define document structure and cannot be nested within each other
-2. **Inline elements** (bold, italic, code spans) which apply styling within blocks
+1. *Block-level elements* (paragraphs, headings, lists) which define document structure and cannot be nested within each other
+2. *Inline elements* (bold, italic, code spans) which apply styling within blocks
 
 This distinction is central to our parsing approach, as it allows us to process markdown streams with predictable patterns. Block elements establish context, while inline styles modify content within that context.
 
 
 #### 3: Routing aka State Machine
 
-The `MarkdownStreamParser` implements a sophisticated state machine that processes text chunks from the `TokensStreamBuffer`. It utilizes pattern-matching evaluations based on regular expressions to determine the appropriate state transitions.
+The `MarkdownStreamParser` implements a state machine that processes text chunks from the `TokensStreamBuffer`. It utilizes pattern-matching evaluations based on regular expressions to determine the appropriate state transitions.
 
 The core of this architecture is the routing mechanism, which:
 
@@ -256,7 +260,7 @@ The core of this architecture is the routing mechanism, which:
 3. Triggers corresponding actions based on matched patterns
 4. Transitions the parser into the appropriate state (block-level or inline)
 
-This consistent routing approach handles both high-level block elements (headings, paragraphs, code blocks) and inline styling (bold, italic, code spans) using the same underlying mechanism, ensuring uniformity in the parsing logic while accommodating the hierarchical nature of Markdown syntax.
+This consistent routing approach handles both high-level block elements (headings, paragraphs, code blocks) and inline styling (bold, italic, code spans) using the same underlying mechanism.
 
 Below is a **simplified diagram** for parsing a Markdown stream containing a paragraph with inline styles (italic, bold, etc.). This example omits other block types for clarity.
 
@@ -335,7 +339,7 @@ stateDiagram-v2
 
 #### 4: Publish/Subscribe Pattern
 
-The parser uses a **publish/subscribe architecture** to decouple the flow of data from its consumption. This design enables you to feed data into the parser and independently subscribe to a stream of parsed output.
+The parser uses a *publish/subscribe* pattern to decouple the flow of data from its consumption. This design enables you to feed data into the parser and independently subscribe to a stream of parsed output.
 
 ```mermaid
 flowchart TD
@@ -354,19 +358,16 @@ To receive parsed segments, simply subscribe to the parser before feeding data. 
 
 #### 5. Singleton Pattern
 
-The parser utilizes a singleton pattern for instance management. Associate each logical stream with a unique `instanceId`. Use `MarkdownStreamParser.getInstance(instanceId)` to retrieve or create the parser for that stream, and `MarkdownStreamParser.removeInstance(instanceId)` for cleanup when the stream concludes.
+The parser utilizes a singleton pattern for instance management. Associate each logical stream with a unique `instanceId`. Use `MarkdownStreamParser.getInstance(instanceId)` to retrieve or create the parser for that stream, and `MarkdownStreamParser.removeInstance(instanceId)` for cleanup when the stream ends.
 
-This design enables **efficient parallel processing** of multiple independent streams (e.g., concurrent user sessions or documents). By isolating each stream's state within its dedicated instance, the library ensures consistent state management and robust, scalable parsing.
+This design enables *parallel processing* of multiple independent streams (e.g., concurrent user sessions or documents). By isolating each stream's state within its dedicated instance, the library ensures consistent state management.
 
 #### 6. Regex-driven Parsing
 
-This project uses a **regex-driven approach** for parsing segments, which while sometimes **debated** so far allowed to achieve the most stable result out of previous attempts.
+This project uses a **regex-driven approach** for parsing segments, which while sometimes **debated** so far allowed to achieve the more stable result than previous attempts.
+**There's still HUGE number of bugs. Refer to some examples in demo.**
 
-For each markup type, we define a set of regex rules to detect both full matches (e.g., single-word styles) and partial matches, which indicate the start or end of a style applied across multiple words. This enables the parser to incrementally and accurately apply styles, even when the Markdown is fragmented or nonstandard.
-
-Although running complex regexes can be less efficient, we prioritize correct rendering over raw performance. In typical browser scenarios, the performance impact is negligible. On the server, where thousands of streams may be parsed in parallel, there is some overhead, but the benefits in stability and output quality outweigh the costs.
-
-We are continuously evaluating this approach and exploring whether more advanced data structures could further improve accuracy or performance. This remains an active area of development.
+For each markup type, we define a set of regex rules to detect both full matches (e.g., single-word styles) and partial matches, which indicate the start or end of a style applied across multiple words.
 
 ---
 

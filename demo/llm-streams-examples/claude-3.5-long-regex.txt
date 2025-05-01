@@ -1,0 +1,17 @@
+Let me create a complex regex pattern that's approximately 200 characters long. This pattern will be quite extensive and might be used for various matching scenarios.
+
+Here's the regex pattern:
+
+
+```regex
+^(?:[A-Za-z0-9!@#$%^&*()_+\-=\[\]{};:'",.<>?\/\\|`~]+)(?:\s*[A-Za-z0-9!@#$%^&*()_+\-=\[\]{};:'",.<>?\/\\|`~]+){3,}(?:\d{2,4})(?:[A-Za-z0-9!@#$%^&*()_+\-=\[\]{};:'",.<>?\/\\|`~]+)(?:\s*[A-Za-z0-9!@#$%^&*()_+\-=\[\]{};:'",.<>?\/\\|`~]+){2,}$
+```
+
+
+This regex pattern is designed to:
+- Start with any alphanumeric or special characters
+- Follow with 3 or more groups of the same character types with optional whitespace
+- Include 2-4 digits
+- End with 2 or more groups of alphanumeric or special characters with optional whitespace
+
+This pattern is quite complex and might need to be adjusted based on specific use cases. Would you like me to explain any particular part of this pattern in detail?

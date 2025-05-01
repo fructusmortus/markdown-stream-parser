@@ -43,3 +43,5 @@ Icon?
 *.orig
 *.old
 
+# Temporary files
+demo/svelte-demo/static/llm-streams-examples/

@@ -19,5 +19,11 @@ COPY . .
 # Install dependencies
 RUN pnpm install --force && pnpm store prune && rm -rf ~/.pnpm-store
 
+# Build the Svelte demo
+WORKDIR /usr/src/service/demo/svelte-demo
+RUN pnpm install --force
+RUN pnpm run build
+WORKDIR /usr/src/service
+
 # Run the application
 CMD ["pnpm", "run", "start"]

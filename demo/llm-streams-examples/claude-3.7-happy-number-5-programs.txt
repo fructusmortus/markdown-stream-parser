@@ -1,0 +1,198 @@
+# Finding Happy Numbers in Exotic Languages
+
+Let me create programs in 5 exotic programming languages to determine if a number is happy. A happy number is one where the sum of squares of its digits eventually leads to 1.
+
+#### 1. Brainfuck
+
+Brainfuck is an esoteric language with only 8 commands:
+
+```brainfuck
++++++++++++++++++++++++++++++++++++++++++++++++++++
+>,[>++++[<-------->-]<--[>+>+<<-]>>[<<+>>-]<++<,]
+>[
+  >++++++++++<[->-[>+>>]>[+[-<+>]>+>>]<<<<<]
+  >[<+>-]
+  >[-]
+  >+
+  >[<<<+>>>-]
+  <[<<<+>>>-]
+  <<+
+  <[
+    >[>+<-]<[>+<-]>>[<<+>>-]<-
+  ]
+  <-[
+    >>+<<-[>>+<<-[>>+<<-[>>+<<-[>>+<<-[>>+<<-
+    [>>+<<-[>>+<<-[>>+<<-[>>+<<-[>>+<<-]]]]]]]]]
+  ]
+  >>
+]
+<[.[-]<]
+```
+
+#### 2. APL (A Programming Language)
+
+APL is known for its unique symbols and concise notation:
+
+```apl
+HappyNumber←{
+  cycle←⍬
+  num←⍵
+  {
+    →(num=1)⍴'happy'
+    →(num∊cycle)⍴'unhappy'
+    cycle,←num
+    num←+/⍵*2
+    ∇num
+  }(10|⍵),⌊⍵÷10
+}
+```
+
+#### 3. Befunge
+
+Befunge is a two-dimensional language where program execution can go in any cardinal direction:
+
+```befunge
+&>:1-:v v *_$.@ 
+ ^    _$>\:^
+ v :::< 
+ >  ^ ,: 
+ |:<
+>$0>:vv          v
+    ^,_@#:+*55**.:<
+vv  _            v
+>*:+*55**^  >0$  v
+v   _  ^         <
+>:55+/v
+   v:<
+   >   ^ 
+   >:55+%v
+      v:<
+      >$   ^
+      > :|  
+        @
+```
+
+#### 4. LOLCODE
+
+LOLCODE is designed to resemble lolcat memes:
+
+```lolcode
+HAI 1.3
+    CAN HAS STDIO?
+    
+    HOW IZ I SQUARE YR num
+        VISIBLE SUM OF PRODUKT OF num AN num
+    IF U SAY SO
+    
+    HOW IZ I HAPPYNUMBR YR num
+        I HAS A seen ITZ A BUKKIT
+        I HAS A current ITZ num
+        
+        IM IN YR loop UPPIN YR i TIL BOTH SAEM current AN 1
+            BOTH SAEM current AN 1, O RLY?
+                YA RLY
+                    FOUND YR "HAPPY NUMBER!"
+                NO WAI
+                    seen HAS A SRS current ITZ "SEEN"
+                    I HAS A sum ITZ 0
+                    I HAS A digit
+                    I HAS A temp ITZ current
+                    
+                    IM IN YR digitloop
+                        BOTH SAEM temp AN 0, O RLY?
+                            YA RLY
+                                GTFO
+                        OIC
+                        
+                        digit R MOD OF temp AN 10
+                        sum R SUM OF sum AN PRODUKT OF digit AN digit
+                        temp R QUOSHUNT OF temp AN 10
+                    IM OUTTA YR digitloop
+                    
+                    current R sum
+                    
+                    seen HAS A SRS current, O RLY?
+                        YA RLY
+                            FOUND YR "NOT HAPPY NUMBER!"
+                    OIC
+            OIC
+        IM OUTTA YR loop
+    IF U SAY SO
+    
+    VISIBLE "ENTER NUMBR: "
+    I HAS A input
+    GIMMEH input
+    input IS NOW A NUMBR
+    
+    VISIBLE I IZ HAPPYNUMBR YR input MKAY
+KTHXBYE
+```
+
+#### 5. Whitespace
+
+Whitespace only uses spaces, tabs, and line feeds as syntax:
+
+```whitespace
+   	  	   
+ 
+   	 	    
+ 
+   		  	  
+ 
+   		 		  
+ 
+   			 			
+ 
+   	     
+ 
+   	 		  
+ 
+   	 			 
+ 
+   		    
+ 
+   		   	
+ 
+   		  	 
+ 
+   		  		
+ 
+   		 	  
+ 
+ 
+
+ 
+   	
+	
+     	
+		  	 	
+		    	
+		   		
+		  		 
+		  	  
+		  			
+		 	   
+		 	  	
+		 	 	 
+	
+ 
+
+     			  		 	 	  	 		 			 		  	  		 	 	 			 			 		 				 		 	   		  	  		  	 	
+ 
+```
+
+Note: Whitespace is literally based on spaces, tabs, and line feeds, so what appears to be empty space above is actually meaningful code. It's difficult to represent accurately in most text editors.
+
+#### How Happy Numbers Work
+
+A number is happy when the process of repeatedly summing the squares of its digits eventually leads to 1. For example:
+
+- Start with 19
+- 1² + 9² = 1 + 81 = 82
+- 8² + 2² = 64 + 4 = 68
+- 6² + 8² = 36 + 64 = 100
+- 1² + 0² + 0² = 1 + 0 + 0 = 1
+
+Since we reached 1, 19 is a happy number.
+
+Each of these programs implements this algorithm in their own unique syntax and paradigm.

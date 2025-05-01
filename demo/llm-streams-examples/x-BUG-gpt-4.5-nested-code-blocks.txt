@@ -1,0 +1,99 @@
+Certainly! Here are examples in five popular programming languages (Python, JavaScript, Java, C++, and Ruby), each checking if a string is a palindrome. I'll show nested code blocks inside comments of each example to clearly demonstrate nesting:
+
+#### Python
+```python
+def is_palindrome(s):
+    # Reverses the string and compares it to original
+    reverse_s = s[::-1]
+    return s == reverse_s
+
+# Example usage
+print(is_palindrome("radar")) # True
+print(is_palindrome("hello")) # False
+
+# Nested Code Block Example
+"""
+```python
+print(is_palindrome("level")) # True
+```
+"""
+```
+
+#### JavaScript
+```javascript
+const isPalindrome = (s) => s === [...s].reverse().join('');
+
+// Example usage
+console.log(isPalindrome("racecar")); // true
+console.log(isPalindrome("world"));   // false
+
+// Nested Code Block Example
+/*
+```javascript
+console.log(isPalindrome("deed")); // true
+```
+*/
+```
+
+#### Java
+```java
+public class PalindromeChecker {
+    public static boolean isPalindrome(String s) {
+        return s.equals(new StringBuilder(s).reverse().toString());
+    }
+
+    public static void main(String[] args) {
+        System.out.println(isPalindrome("madam")); // true
+        System.out.println(isPalindrome("java"));  // false
+    }
+    
+    /* Nested Code Block Example:
+    ```java
+        System.out.println(isPalindrome("civic")); // true
+    ```
+    */
+}
+```
+
+#### C++
+```cpp
+#include <iostream>
+#include <algorithm>
+
+bool isPalindrome(const std::string &s) {
+    return std::equal(s.begin(), s.end(), s.rbegin());
+}
+
+int main() {
+    std::cout << std::boolalpha;
+    std::cout << isPalindrome("noon") << std::endl;   // true
+    std::cout << isPalindrome("cpp") << std::endl;    // false
+
+    /* Nested Code Block Example:
+    ```cpp
+        std::cout << isPalindrome("kayak") << std::endl; // true
+    ```
+    */
+    return 0;
+}
+```
+
+#### Ruby
+```ruby
+def palindrome?(s)
+  s == s.reverse
+end
+
+# Example usage
+puts palindrome?("refer") # true
+puts palindrome?("ruby")  # false
+
+# Nested code block example:
+=begin
+```ruby
+puts palindrome?("rotor") # true
+```
+=end
+```
+
+Each of these examples clearly demonstrates the palindrome check with a simple, readable implementation. They also include nested code blocks as specified.
