@@ -10,6 +10,11 @@ Giving this repository a star ***★*** is a great way to encourage faster devel
 
 ### DEMO: [markdown-stream-parser.lixpi.org](https://markdown-stream-parser.lixpi.org)
 
+<br>
+
+![sample](https://github.com/user-attachments/assets/6e3525f7-9082-46e9-853b-90ee20447fe5)
+
+
 ## Installation
 
 ```bash
