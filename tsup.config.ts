@@ -7,7 +7,7 @@ export default defineConfig({
   minify: true,
   outDir: 'build',
   clean: true,
-  sourcemap: true,
+  sourcemap: false, // Disabled sourcemap for smaller package size
   target: 'es2015',
   esbuildOptions(options) {
     options.plugins = [

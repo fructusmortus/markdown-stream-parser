@@ -1,4 +1,4 @@
-name: Build and Publish NPM Package
+name: Build and Publish Package
 
 on:
   push:
@@ -9,12 +9,15 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Node.js
+      - name: Setup Node.js for NPM
         uses: actions/setup-node@v3
         with:
           node-version: 'lts/*'
@@ -34,4 +37,16 @@ jobs:
       - name: Publish to NPM
         run: pnpm publish --no-git-checks --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.LIXPI_NPM }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+    #   - name: Setup Node.js for GitHub Packages
+    #     uses: actions/setup-node@v3
+    #     with:
+    #       node-version: 'lts/*'
+    #       registry-url: 'https://npm.pkg.github.com'
+    #       scope: '@lixpi'
+
+    #   - name: Publish to GitHub Packages
+    #     run: pnpm publish --registry=https://npm.pkg.github.com --no-git-checks
+    #     env:
+    #       NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
