@@ -1,7 +1,7 @@
 {
     "name": "@lixpi/markdown-stream-parser",
     "private": false,
-    "version": "0.0.3-2",
+    "version": "0.0.3-3",
     "type": "module",
     "description": "An incremental parser for LLM Markdown streams.",
     "main": "build/markdown-stream-parser.cjs",
