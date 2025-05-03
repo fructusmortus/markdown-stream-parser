@@ -17,14 +17,18 @@ Giving this repository a star ***★*** is a great way to encourage faster devel
 
 ## Installation
 
+NPM:
 ```bash
-<npm package is comming soon>
-
-For now just clone the repository and use
-
-import MarkdownStreamParser from '../src/markdown-stream-parser.ts'
+pnpm i @lixpi/markdown-stream-parser
+npm i @lixpi/markdown-stream-parser
+yarn add @lixpi/markdown-stream-parser
 ```
 
+Or just clone the repository import it directly from the source:
+
+```javascript
+import MarkdownStreamParser from '../src/markdown-stream-parser.ts'
+```
 
 Can be used on a backend or frontend, there's no rendering logic involved.
 

@@ -15,12 +15,15 @@
         }
     },
     "files": [
-        "build",
+        "build/*.js",
+        "build/*.cjs",
+        "build/*.d.ts",
+        "build/*.d.cts",
         "LICENSE",
         "README.md"
     ],
     "scripts": {
-        "build": "tsup src/markdown-stream-parser.ts --dts --format esm,cjs --minify --out-dir build",
+        "build": "tsup src/markdown-stream-parser.ts --dts --format esm,cjs --minify --out-dir build --no-sourcemap",
         "debug-parser": "node ./demo/debug-scripts/char-streamer.ts",
         "prepare": "pnpm run build"
     },
