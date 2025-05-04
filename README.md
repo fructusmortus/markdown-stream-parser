@@ -59,7 +59,7 @@ Before you can parse the stream, you must subscribe to the parser. If you do not
 First import the parser and initialize it with an `instance-id`. (you can have as many parallel parsers as you want, just make sure to use different `instance-id`s)
 
 ```typescript
-import MarkdownStreamParser from '../src/markdown-stream-parser.ts'
+import MarkdownStreamParser from '@lixpi/markdown-stream-parser'
 
 // Get a parser instance (singleton per ID)
 const parser = MarkdownStreamParser.getInstance('session-1')
@@ -105,7 +105,7 @@ Once the subscription to the parser is initialized, you can start parsing the st
 Again, this can be done in the same file or in a different part of your application. Just make sure to refer to the same parser `instance-id`.
 
 ```typescript
-import MarkdownStreamParser from '../src/markdown-stream-parser.ts'
+import MarkdownStreamParser from '@lixpi/markdown-stream-parser'
 
 // Get a parser instance (singleton per ID)
 const parser = MarkdownStreamParser.getInstance('session-1')

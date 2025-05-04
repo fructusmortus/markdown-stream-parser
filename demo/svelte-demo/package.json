@@ -63,6 +63,6 @@
 		]
 	},
 	"dependencies": {
-		"@lixpi/markdown-stream-parser": "*"
+		"@lixpi/markdown-stream-parser": "0.0.3-31"
 	}
 }
