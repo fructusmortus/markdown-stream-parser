@@ -1,11 +1,9 @@
 'use strict'
 
-import chalk from 'chalk'
-
 import TokensStreamBuffer from './tokens-stream-buffer.ts'
 import MarkdownStreamParserStateMachine from './state-machine/markdown-state-machine.ts'
 
-export default class MarkdownStreamParser {
+export class MarkdownStreamParser {
     static instances = new Map()
     tokensStreamProcessor: TokensStreamBuffer
     markdownStreamParser: MarkdownStreamParserStateMachine
@@ -20,7 +18,7 @@ export default class MarkdownStreamParser {
             MarkdownStreamParser.instances.set(instanceId, new MarkdownStreamParser())    // Save the instance, ensure it is available statically
         }
 
-        console.info(`${chalk.blue('AiStreamParser ->')} class.MarkdownStreamParser::${chalk.green('getInstance')}::instanceId: ${instanceId}, instances: ${MarkdownStreamParser.instances}`)
+        console.info(`\x1b[34mAiStreamParser ->\x1b[0m class.MarkdownStreamParser::\x1b[32mgetInstance\x1b[0m::instanceId: ${instanceId}, instances: ${MarkdownStreamParser.instances}`)
 
         return MarkdownStreamParser.instances.get(instanceId)
     }
@@ -84,7 +82,7 @@ export default class MarkdownStreamParser {
     parseToken(chunk: string): Error | void {
         if (!this.parsing) {
             const error = new Error('Parser is not started.')
-            console.info(`${chalk.blue('AiStreamParser ->')} ${chalk.red('class.MarkdownStreamParser::parseToken::error')}`, error)
+            console.info(`\x1b[34mAiStreamParser ->\x1b[0m \x1b[31mclass.MarkdownStreamParser::parseToken::error\x1b[0m`, error)
 
             return error
         }

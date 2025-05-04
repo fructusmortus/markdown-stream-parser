@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount } from 'svelte';
-import MarkdownStreamParser from '../../../../src/markdown-stream-parser.js';
+import * as MarkdownStreamParser from '@lixpi/markdown-stream-parser';
 
 type ExampleFile = { base: string; json: string; txt: string };
 

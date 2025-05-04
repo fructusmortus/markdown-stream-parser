@@ -34,10 +34,33 @@ jobs:
       - name: Build package
         run: pnpm run build
 
+      - name: Check if version has increased
+        id: version-check
+        run: |
+          # Get current version from package.json
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+
+          # Get latest published version from npm
+          PUBLISHED_VERSION=$(npm view @lixpi/markdown-stream-parser version 2>/dev/null || echo "0.0.0")
+          echo "Published version: $PUBLISHED_VERSION"
+
+          # Compare versions using semver comparison in node
+          SHOULD_PUBLISH=$(node -e "console.log(require('semver').gt('$CURRENT_VERSION', '$PUBLISHED_VERSION') ? 'true' : 'false')")
+          echo "Should publish: $SHOULD_PUBLISH"
+
+          echo "should_publish=$SHOULD_PUBLISH" >> $GITHUB_OUTPUT
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
       - name: Publish to NPM
+        if: steps.version-check.outputs.should_publish == 'true'
         run: pnpm publish --no-git-checks --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Log when skipping publish
+        if: steps.version-check.outputs.should_publish != 'true'
+        run: echo "Skipping publish - version has not increased (current version is ${{ steps.version-check.outputs.current_version }})"
 
     #   - name: Setup Node.js for GitHub Packages
     #     uses: actions/setup-node@v3

@@ -61,5 +61,8 @@
 		"onlyBuiltDependencies": [
 			"esbuild"
 		]
+	},
+	"dependencies": {
+		"@lixpi/markdown-stream-parser": "*"
 	}
 }
