@@ -172,7 +172,7 @@ But it will **always remain `render-agnostic`** - whatever you use to render you
 ## Features
 
 - [x] Headers (`# H1`, `## H2`, etc.)
-  - [ ] //TODO inline styles for headers
+  - [ ] //TODO: PRIORITY, inline styles for headers. Should be super easy because the parser already supports inline styles.
 - [x] Paragraphs
 - [x] Inline styles
   - [x] Inline Italic (`*text*`)
