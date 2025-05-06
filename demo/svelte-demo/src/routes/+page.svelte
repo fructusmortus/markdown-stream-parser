@@ -1,6 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte';
-import { MarkdownStreamParser } from '@lixpi/markdown-stream-parser';
+// import { MarkdownStreamParser } from '@lixpi/markdown-stream-parser';
+import { MarkdownStreamParser } from '../../../../src/markdown-stream-parser.ts'
 
 type ExampleFile = { base: string; json: string; txt: string };
 
@@ -8,16 +9,19 @@ let examples: ExampleFile[] = [];
 let selectedExample: ExampleFile | null = null;
 let delay = 80;
 let streaming = false;
+let paused = false;
 let tokens: string[] = [];
 let txtContent = '';
 let jsonContent = '';
 let parsedSegments: any[] = [];
 let parsedBlocks: any[][] = [];
 let currentToken = '';
-let currentParsedChunk: any = null;
+let currentParsedChunks: any[] = []; // Array to hold all parsed chunks for the current token
 let error = '';
 let jsonItems: string[] = []; // Add state for parsed JSON items
 let currentTokenIndex: number | null = null; // Track the index of the current token
+let parser: any = null;
+let parserId: string = '';
 
 async function loadExamples() {
   try {
@@ -47,58 +51,131 @@ async function loadSelectedFiles() {
 }
 
 function handleExampleChange() {
+  resetParser();
+}
+
+function initializeParser() {
   parsedSegments = [];
   currentToken = '';
-  currentParsedChunk = null;
-  currentTokenIndex = null; // Reset index on example change
+  currentParsedChunks = [];
+  currentTokenIndex = null; // Reset index before starting
+  error = '';
+
+  parserId = 'demo-' + Date.now();
+  parser = MarkdownStreamParser.getInstance(parserId);
+  parser.startParsing();
+
+  // Add explicit types for parsed and unsubscribe
+  parser.subscribeToTokenParse((parsed: any, unsubscribe: () => void) => {
+    if (parsed.status === 'END_STREAM') {
+      // Add parsed END_STREAM status to parsedSegments
+      parsedSegments = [...parsedSegments, parsed];
+      unsubscribe();
+      MarkdownStreamParser.removeInstance(parserId);
+      streaming = false;
+      paused = false;
+      currentTokenIndex = null; // Remove highlight when stream ends
+      currentToken = ''; // Clear current token display
+    } else {
+      // Add new parsed segment to the list
+      parsedSegments = [...parsedSegments, parsed];
+
+      // For the current token, accumulate all parsed segments
+      if (streaming || paused) {
+        currentParsedChunks = [...currentParsedChunks, parsed];
+      }
+    }
+  });
 }
 
 async function simulateStream() {
   if (!selectedExample) return;
-  streaming = true;
-  parsedSegments = [];
-  currentToken = '';
-  currentParsedChunk = null;
-  currentTokenIndex = null; // Reset index before starting
-  error = '';
 
-  const parserId = 'demo-' + Date.now();
-  const parser = MarkdownStreamParser.getInstance(parserId);
-  parser.startParsing();
+  // Initialize parser if not already initialized
+  if (!parser || !streaming) {
+    streaming = true;
+    paused = false;
+    initializeParser();
+  }
 
-  // Add explicit types for parsed and unsubscribe
-  let unsub = parser.subscribeToTokenParse((parsed: any, unsubscribe: () => void) => {
-    if (parsed.status === 'END_STREAM') {
-      currentParsedChunk = parsed; // Update currentParsedChunk with END_STREAM status
-      parsedSegments = [...parsedSegments, parsed]; // Also add it to parsedSegments
-      unsubscribe();
-      MarkdownStreamParser.removeInstance(parserId);
-      streaming = false;
-      currentTokenIndex = null; // Remove highlight when stream ends
-      currentToken = ''; // Clear current token display
-    } else {
-      parsedSegments = [...parsedSegments, parsed];
-      currentParsedChunk = parsed;
-    }
-  });
-
-  for (let i = 0; i < tokens.length; i++) {
-    if (!streaming) {
-      currentTokenIndex = null; // Remove highlight if stopped early
-      currentToken = ''; // Clear current token if stopped early
+  for (let i = currentTokenIndex !== null ? currentTokenIndex + 1 : 0; i < tokens.length; i++) {
+    if (!streaming || paused) {
+      if (paused) {
+        currentTokenIndex = i - 1; // Stay at current token when paused
+      } else {
+        currentTokenIndex = null; // Remove highlight if stopped
+        currentToken = ''; // Clear current token if stopped
+        currentParsedChunks = []; // Clear parsed chunks
+      }
       break;
     }
+
+    // Clear previous parsed chunks for this token
+    currentParsedChunks = [];
+
+    // Update current token display
     currentTokenIndex = i; // Highlight the current token index
     currentToken = tokens[i];
+
+    // Process the token
     parser.parseToken(tokens[i]);
+
+    // Wait for a moment to allow the parser to emit all segments for this token
     await new Promise((r) => setTimeout(r, delay));
   }
-  parser.stopParsing();
-  streaming = false;
-  if (currentTokenIndex !== null) { // Ensure highlight is removed if loop finishes naturally
-      currentTokenIndex = null;
-      currentToken = ''; // Clear current token if loop finishes naturally
+
+  // If we've reached the end of tokens and weren't paused or stopped
+  if (streaming && !paused && currentTokenIndex === tokens.length - 1) {
+    parser.stopParsing();
+    streaming = false;
+    currentTokenIndex = null;
+    currentToken = '';
+    currentParsedChunks = [];
+    parser = null;
   }
+}
+
+function pauseStream() {
+  if (streaming && !paused) {
+    paused = true;
+  }
+}
+
+function processNextToken() {
+  if (paused && currentTokenIndex !== null && currentTokenIndex < tokens.length - 1) {
+    const nextIndex = currentTokenIndex + 1;
+    // Clear previous parsed chunks
+    currentParsedChunks = [];
+
+    currentTokenIndex = nextIndex;
+    currentToken = tokens[nextIndex];
+    parser.parseToken(tokens[nextIndex]);
+
+    // If this was the last token, finish the stream
+    if (nextIndex === tokens.length - 1) {
+      parser.stopParsing();
+      streaming = false;
+      paused = false;
+      parser = null;
+    }
+  }
+}
+
+function resetParser() {
+  if (parser) {
+    parser.stopParsing();
+    MarkdownStreamParser.removeInstance(parserId);
+    parser = null;
+  }
+
+  parsedSegments = [];
+  parsedBlocks = [];
+  currentToken = '';
+  currentParsedChunks = [];
+  currentTokenIndex = null;
+  streaming = false;
+  paused = false;
+  error = '';
 }
 
 $: parsedBlocks = (() => {
@@ -165,9 +242,27 @@ $: { // Reactive block to parse jsonContent when it changes
       <label class="text-sm">Delay: {delay}ms</label>
       <input type="range" min="10" max="500" step="10" bind:value={delay} class="w-32" />
     </div>
-    <button class="bg-blue-600 text-white px-3 py-1 rounded shadow hover:bg-blue-700 disabled:opacity-50" on:click={simulateStream} disabled={streaming}>
-      Simulate stream
-    </button>
+    <div class="flex flex-wrap gap-2">
+      <button class="bg-blue-600 text-white px-3 py-1 rounded shadow hover:bg-blue-700 disabled:opacity-50"
+              on:click={simulateStream}
+              disabled={streaming && !paused}>
+        Simulate stream
+      </button>
+      <button class="bg-amber-500 text-white px-3 py-1 rounded shadow hover:bg-amber-600 disabled:opacity-50"
+              on:click={pauseStream}
+              disabled={!streaming || paused}>
+        Pause stream
+      </button>
+      <button class="bg-green-600 text-white px-3 py-1 rounded shadow hover:bg-green-700 disabled:opacity-50"
+              on:click={processNextToken}
+              disabled={!paused || currentTokenIndex === null || currentTokenIndex >= tokens.length - 1}>
+        Process next token
+      </button>
+      <button class="bg-red-600 text-white px-3 py-1 rounded shadow hover:bg-red-700"
+              on:click={resetParser}>
+        Reset parser
+      </button>
+    </div>
     {#if error}
       <span class="text-red-600 ml-4 self-center">{error}</span>
     {/if}
@@ -229,10 +324,17 @@ $: { // Reactive block to parse jsonContent when it changes
         <h2 class="font-bold mb-2 text-lg">Current Token</h2>
         <pre class="font-mono text-blue-700 text-lg break-all whitespace-pre-wrap">{JSON.stringify(currentToken, null, 2)}</pre>
       </div>
-      <div class="bg-white rounded shadow p-4 min-h-[180px]">
-        <h2 class="font-bold mb-2 text-lg">Parsed Chunk</h2>
-        {#if currentParsedChunk}
-          <pre class="font-mono text-gray-800 text-sm whitespace-pre-wrap">{JSON.stringify(currentParsedChunk, null, 2)}</pre>
+      <div class="bg-white rounded shadow p-4 min-h-[180px] overflow-auto">
+        <h2 class="font-bold mb-2 text-lg">Parsed Chunks</h2>
+        {#if currentParsedChunks.length > 0}
+          {#each currentParsedChunks as chunk, index}
+            <div class="mb-2">
+              <div class="text-xs font-semibold text-gray-500 mb-1">{index + 1} of {currentParsedChunks.length}</div>
+              <pre class="font-mono text-gray-800 text-sm whitespace-pre-wrap">{JSON.stringify(chunk, null, 2)}</pre>
+            </div>
+          {/each}
+        {:else}
+          <div class="text-gray-500 italic">No parsed chunks for this token</div>
         {/if}
       </div>
     </div>

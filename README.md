@@ -6,7 +6,7 @@ It's built to handle the ambiguities of LLM-generated streams, which often produ
 
 ### ⚠️ ***Please note that this project is in an early stage of development, so there are MANY bugs and missing features.***
 
-Giving this repository a star ***★*** is a great way to encourage faster development!
+<br>
 
 ### DEMO: [markdown-stream-parser.lixpi.org](https://markdown-stream-parser.lixpi.org)
 
