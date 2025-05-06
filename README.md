@@ -183,8 +183,8 @@ But it will **always remain `render-agnostic`** - whatever you use to render you
 - [x] Code Blocks (```` ```code-block``` ````) with language detection
 - [ ] Blockquotes (`> quote`) [Iusse #2](https://github.com/Lixpi/markdown-stream-parser/issues/2)
 - [ ] //TODO: PRIORITY: Ordered Lists (`1. item`) [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
-- [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`)
-- [ ] //TODO: Task Lists (`- [ ] item`)
+- [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`) *BLOCKED BY:* [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
+- [ ] //TODO: Task Lists (`- [ ] item`) *BLOCKED BY:* [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
 - [ ] //TODO: PRIORITY: Tables
 - [ ] //TODO: PRIORITY: Links (`[text](url)`)
 - [ ] //TODO: PRIORITY: Images (`![alt](url)`)
