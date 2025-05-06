@@ -24,10 +24,20 @@ npm i @lixpi/markdown-stream-parser
 yarn add @lixpi/markdown-stream-parser
 ```
 
-Or just clone the repository and import it directly from the source:
+Or just clone the repository and import it directly from the source.
 
-```javascript
-import { MarkdownStreamParser } from '../src/markdown-stream-parser.ts'
+### Importing
+
+The parser supports both ES6 module and CommonJS (Node.js) import styles.
+
+**ES6 import:**
+```typescript
+import { MarkdownStreamParser } from '@lixpi/markdown-stream-parser'
+```
+
+**CommonJS require:**
+```typescript
+const { MarkdownStreamParser } = require('@lixpi/markdown-stream-parser')
 ```
 
 Can be used on a backend or frontend, there's no rendering logic involved.
