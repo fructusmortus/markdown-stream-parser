@@ -195,7 +195,7 @@ But it will **always remain `render-agnostic`** - whatever you use to render you
 - [ ] //TODO: PRIORITY: Ordered Lists (`1. item`) [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
 - [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`) *BLOCKED BY:* [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
 - [ ] //TODO: Task Lists (`- [ ] item`) *BLOCKED BY:* [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
-- [ ] //TODO: PRIORITY: Tables
+- [ ] //TODO: PRIORITY: Tables [Iusse #7](https://github.com/Lixpi/markdown-stream-parser/issues/7)
 - [ ] //TODO: PRIORITY: Links (`[text](url)`)
 - [ ] //TODO: PRIORITY: Images (`![alt](url)`)
 - [ ] //TODO: Horizontal Rules (`---`, `***`, `___`)
