@@ -2,7 +2,7 @@ import fs from 'fs'
 
 import { log, info, infoStr, warn, err } from './debug-tools.ts'
 
-import MarkdownStreamParser from '../../src/markdown-stream-parser.ts'
+import { MarkdownStreamParser } from '../../src/markdown-stream-parser.ts'
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
