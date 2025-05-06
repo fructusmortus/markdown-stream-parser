@@ -172,7 +172,7 @@ But it will **always remain `render-agnostic`** - whatever you use to render you
 ## Features
 
 - [x] Headers (`# H1`, `## H2`, etc.)
-  - [ ] //TODO: PRIORITY, inline styles for headers. Should be super easy because the parser already supports inline styles.
+  - [ ] //TODO: PRIORITY, inline styles for headers. [Iusse #1](https://github.com/Lixpi/markdown-stream-parser/issues/1) Should be easy because the parser already supports inline styles.
 - [x] Paragraphs
 - [x] Inline styles
   - [x] Inline Italic (`*text*`)
@@ -181,8 +181,8 @@ But it will **always remain `render-agnostic`** - whatever you use to render you
   - [x] Inline Strikethrough (`~~text~~`)
   - [x] Inline Code (`` `code` ``)
 - [x] Code Blocks (```` ```code-block``` ````) with language detection
-- [ ] Blockquotes (`> quote`)
-- [ ] //TODO: PRIORITY: Ordered Lists (`1. item`)
+- [ ] Blockquotes (`> quote`) [Iusse #2](https://github.com/Lixpi/markdown-stream-parser/issues/2)
+- [ ] //TODO: PRIORITY: Ordered Lists (`1. item`) [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
 - [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`)
 - [ ] //TODO: Task Lists (`- [ ] item`)
 - [ ] //TODO: PRIORITY: Tables
