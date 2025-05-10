@@ -272,8 +272,9 @@ $: { // Reactive block to parse jsonContent when it changes
               disabled={!paused || currentTokenIndex === null || currentTokenIndex >= tokens.length - 1}>
         Process next token
       </button>
-      <button class="bg-red-600 text-white px-3 py-1 rounded shadow hover:bg-red-700"
-              on:click={resetParser}>
+      <button class="bg-red-600 text-white px-3 py-1 rounded shadow hover:bg-red-700 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+              on:click={resetParser}
+              disabled={!parser && !parsedSegments.length}>
         Reset parser
       </button>
     </div>
