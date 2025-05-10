@@ -4,7 +4,11 @@ A library designed to incrementally parse Markdown text from a stream of tokens.
 
 It's built to handle the ambiguities of LLM-generated streams, which often produce imperfect or invalid Markdown. It combines a finite state machine with regex patterns to determine the best match for each segment.
 
+## This project is an **open-ended** research on how to incrementally parse LLM-streams.
+
 ### ⚠️ ***Please note that this project is in an early stage of development, so there are MANY bugs and missing features.***
+
+### 🛑 All feature development is blocked by this *[research task](https://github.com/Lixpi/markdown-stream-parser/issues/5)* which would bring a complete re-imagining of the code. Stay tuned...
 
 <br>
 
@@ -173,16 +177,12 @@ The output is a series of objects containing the content of a parsed segment, th
 
 Good question. You can use this stream to render styled content in your application in real time. Having a `segment type` and `inline styles` is enough to style it however you want.
 
-Over time, more features will be added, such as building an AST (abstract syntax tree) to provide an in-memory representation of parsed content and handling the ambiguities of various LLMs more effectively.
-It may even expand beyond standard markdown to allow custom styling combinations.
-
-But it will **always remain `render-agnostic`** - whatever you use to render your styled text is entirely up to you.
+It will **always remain `render-agnostic`** - whatever you use to render your styled text is entirely up to you.
 
 
 ## Features
 
 - [x] Headers (`# H1`, `## H2`, etc.)
-  - [ ] //TODO: PRIORITY, inline styles for headers. [Iusse #1](https://github.com/Lixpi/markdown-stream-parser/issues/1) Should be easy because the parser already supports inline styles.
 - [x] Paragraphs
 - [x] Inline styles
   - [x] Inline Italic (`*text*`)
@@ -401,9 +401,6 @@ For each markup type, we define a set of regex rules to detect both full matches
 
 
 ## Future Plans and Directions
-
-This project is an **open-ended** research on how to parse LLM-produced streams in the most robust and efficient way.
-
 
 ### Exploration of Alternative Parsing Architectures
 

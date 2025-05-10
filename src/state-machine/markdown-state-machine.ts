@@ -25,18 +25,6 @@ enum INLINE_ELEMENT_STATES {
     processingInlineCode = 'processingInlineCode',
 }
 
-// enum STATES {
-//     routing = 'routing',
-//     processingHeader = 'processingHeader',
-//     processingParagraph = 'processingParagraph',
-//     processingItalicText = 'processingItalicText',
-//     processingBoldText = 'processingBoldText',
-//     processingBoldItalicText = 'processingBoldItalicText',
-//     processingStrikethroughText = 'processingStrikethroughText',
-//     processingInlineCode = 'processingInlineCode',
-//     processingCodeBlock = 'processingCodeBlock',
-// }
-
 export type Context = {
     isProcessingNewLine: boolean
     isProcessingStylingMarkerSegment: boolean
@@ -83,20 +71,14 @@ const initialContext = (): Context => ({
 
 export default class TextStreamStateMachine {
     context: Context
-    // currentState: string
-
     blockElementState: string
     inlineElementState: string
-
     parsedSegmentListeners: Array<(blockContent: ParsedSegment) => void>    // Store subscriber functions
 
     constructor() {
         this.context = initialContext()
-        // this.currentState = STATES.routing
-
-        this.blockElementState = BLOCK_ELEMENT_STATES.routing
-        this.inlineElementState = INLINE_ELEMENT_STATES.routing
-
+        this.blockElementState = BLOCK_ELEMENT_STATES.routing    // Initial state for block elements
+        this.inlineElementState = INLINE_ELEMENT_STATES.routing    // Initial state for inline elements
         this.parsedSegmentListeners = []    // Store subscriber functions
         this.notifyParsedSegment = this.notifyParsedSegment.bind(this)    // Bind the notifyParsedSegment method to the instance
     }
@@ -131,11 +113,6 @@ export default class TextStreamStateMachine {
         }
     }
 
-    // Transition to a new state
-    // transition(state: string): void {
-    //     this.currentState = state
-    // }
-
     transitionBlockElementState(state: string): void {
         this.blockElementState = state
     }
@@ -151,26 +128,6 @@ export default class TextStreamStateMachine {
         this.blockElementState = BLOCK_ELEMENT_STATES.routing
         this.inlineElementState = INLINE_ELEMENT_STATES.routing
     }
-
-    // checkForNewLine(segment: string, { resetParser = false, transitionTo = STATES.routing }: { resetParser?: boolean, transitionTo?: string }) {
-    //     if (
-    //         this.evaluate('ends::newLine', { event: { segment }, params: {} })
-    //     ) {
-    //         this.act('reset::blockContentBuffer', { event: {}, params: {} })
-    //         this.act('set::isProcessingNewLine', { event: {value: true}, params: {} })
-    //         resetParser && this.resetParser()
-    //         transitionTo && this.transition(transitionTo)
-    //     }
-    // }
-
-    // checkForNewLine(segment: string) {
-    //     if (
-    //         this.evaluate('ends::newLine', { event: { segment }, params: {} })
-    //     ) {
-    //         this.act('reset::blockContentBuffer', { event: {}, params: {} })
-    //         this.act('set::isProcessingNewLine', { event: { value: true }, params: {} })
-    //     }
-    // }
 
     processHeader(segment: string) {
         this.act('buffer::blockContent', { event: { segment }, params: {} })
@@ -192,7 +149,6 @@ export default class TextStreamStateMachine {
             }
         })
 
-        // this.checkForNewLine(segment, { resetParser: true, transitionTo: STATES.routing })
         if (
             this.evaluate('ends::newLine', { event: { segment }, params: {} })
         ) {
@@ -260,9 +216,6 @@ export default class TextStreamStateMachine {
             }
 
             this.act('reset::inlineTextStyle', { event: {}, params: {} })
-            // this.checkForNewLine(segment, { resetParser: false, transitionTo: STATES.routing })
-            // this.transition(STATES.routing)
-
 
             if (
                 this.evaluate('ends::newLine', { event: { segment }, params: {} })
@@ -271,7 +224,7 @@ export default class TextStreamStateMachine {
                 this.act('set::isProcessingNewLine', { event: { value: true }, params: {} })
 
                 // When new line symbol is met, reset the current block context and states
-                this.resetParser() // FINDME: originally the I didn't reset the parser here, but why ???????????????????
+                this.resetParser()
                 this.transitionBlockElementState(BLOCK_ELEMENT_STATES.routing)
                 this.transitionInlineElementState(INLINE_ELEMENT_STATES.routing)
             }
@@ -319,6 +272,7 @@ export default class TextStreamStateMachine {
                     isDebug: IS_DEBUG
                 }
             })
+
             return
         }
 
@@ -364,8 +318,6 @@ export default class TextStreamStateMachine {
             }
 
             this.act('reset::inlineTextStyle', { event: {}, params: {} })
-
-            // this.transition(STATES.routing)
             this.transitionInlineElementState(INLINE_ELEMENT_STATES.routing)
         }
 
@@ -385,8 +337,6 @@ export default class TextStreamStateMachine {
             })
         }
 
-        // this.checkForNewLine(segment, { resetParser: false, transitionTo: STATES.routing })
-
         if (
             this.evaluate('ends::newLine', { event: { segment }, params: {} })
         ) {
@@ -394,7 +344,7 @@ export default class TextStreamStateMachine {
             this.act('set::isProcessingNewLine', { event: { value: true }, params: {} })
 
             // When new line symbol is met, reset the current block context and states
-            this.resetParser() // FINDME: originally the I didn't reset the parser here, but why ???????????????????
+            this.resetParser()
             this.transitionBlockElementState(BLOCK_ELEMENT_STATES.routing)
             this.transitionInlineElementState(INLINE_ELEMENT_STATES.routing)
         }
@@ -511,13 +461,11 @@ export default class TextStreamStateMachine {
             params: {
                 emitter: this.notifyParsedSegment,
                 isTruncateTrailingNewLine: true,
-                // origin: STATES.processingParagraph,
                 origin: BLOCK_ELEMENT_STATES.processingParagraph,
                 isDebug: IS_DEBUG
             }
         })
 
-        // this.checkForNewLine(segment, { resetParser: false, transitionTo: STATES.routing })
         if (
             this.evaluate('ends::newLine', { event: { segment }, params: {} })
         ) {
@@ -525,13 +473,12 @@ export default class TextStreamStateMachine {
             this.act('set::isProcessingNewLine', { event: { value: true }, params: {} })
 
             // When new line symbol is met, reset the current block context and states
-            this.resetParser() // FINDME: originally the I didn't reset the parser here, but why ???????????????????
+            this.resetParser()
             this.transitionBlockElementState(BLOCK_ELEMENT_STATES.routing)
             this.transitionInlineElementState(INLINE_ELEMENT_STATES.routing)
         }
 
         // Always transition back to routing state so that each new segment is evaluated independently
-        // this.transition(STATES.routing)
         this.transitionBlockElementState(BLOCK_ELEMENT_STATES.routing)
     }
 
@@ -615,108 +562,7 @@ export default class TextStreamStateMachine {
             }
         }
 
-        // if(this.currentState === STATES.routing) {
-        //     if (
-        //         this.evaluate('is::processingNewLine', { event: {}, params: {} }) &&
-        //         this.evaluate('is::headerMarker', { event: { segment }, params: {} })
-        //     ) {
-        //         this.act('set::header', { event: { segment }, params: {} })
-        //         this.act('set::isProcessingNewLine', { event: {value: false}, params: {} })
-        //         this.act('set::isProcessingStylingMarkerSegment', { event: {value: true}, params: {} })
-        //         this.transition(STATES.processingHeader)
-        //     }
-
-        //     // Detected inline styles (italic), routing to the processingItalicText state
-        //     if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.italic.name } })) {
-        //         this.transition(STATES.processingItalicText)
-        //     }
-
-        //     // Detected inline styles (bold), routing to the processingBoldText state
-        //     if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.bold.name } })) {
-        //         this.transition(STATES.processingBoldText)
-        //     }
-
-        //     // Detected inline styles (boldItalic), routing to the processingBoldItalicText state
-        //     if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.boldItalic.name } })) {
-        //         this.transition(STATES.processingBoldItalicText)
-        //     }
-
-        //     // Detected inline styles (strikethrough), routing to the processingStrikethroughText state
-        //     if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.strikethrough.name } })) {
-        //         this.transition(STATES.processingStrikethroughText)
-        //     }
-
-        //     // Detected inline styles (inlineCode), routing to the processingInlineCode state
-        //     if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.inlineCode.name } })) {
-        //         this.transition(STATES.processingInlineCode)
-        //     }
-
-        //     // Detected codeBlock, routing to the processingCodeBlock state
-        //     if (this.evaluate('is::codeBlockStartMarker', { event: { segment }, params: {} })) {
-        //         this.act('set::codeBlock', {
-        //             event: { segment },
-        //             params: {}
-        //         })
-        //         this.act('set::isProcessingStylingMarkerSegment', {
-        //             event: { value: true },
-        //             params: {}
-        //         })
-        //         this.act('reset::blockContentBuffer', { event: {}, params: {} })
-        //         this.transition(STATES.processingCodeBlock)
-        //     }
-
-        //     // If no markdown routing path is detected, then default to regular paragraph
-        //     if (
-        //         this.currentState === STATES.routing ||
-        //         !this.evaluate('is::blockTypeSet', { event: {}, params: {} })
-        //     ) {
-        //         this.act('set::paragraph', { event: {}, params: {} })
-        //     }
-
-        //     if (this.currentState === STATES.routing) {
-        //         this.transition(STATES.processingParagraph)
-        //     }
-        // }
-
-        // Process the segment based on the current state
-        // switch(this.currentState) {
-        //     case STATES.processingHeader:
-        //         this.processHeader(segment)
-        //         break
-
-        //     case STATES.processingItalicText:
-        //         // this.act('debug::parsedSegment', { event: { segment }, params: {origin: STATES.processingItalicText } })
-        //         this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.italic.name)
-        //         break
-
-        //     case STATES.processingBoldText:
-        //         this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.bold.name)
-        //         break
-
-        //     case STATES.processingBoldItalicText:
-        //         this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.boldItalic.name)
-        //         break
-
-        //     case STATES.processingStrikethroughText:
-        //         this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.strikethrough.name)
-        //         break
-
-        //     case STATES.processingInlineCode:
-        //         this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.inlineCode.name)
-        //         break
-
-        //     case STATES.processingCodeBlock:
-        //         this.processCodeBlock(segment)
-        //         break
-
-        //     case STATES.processingParagraph:
-        //         this.processParagraph(segment)
-        //         break
-
-        //     default:
-        //         console.error('Unknown state')
-        // }
-
+        // Once the state is transitioned, proceed with the processing in the same pass. This is a deviation from classical FSM, but doing it this way allows for denser code and more flexibility
         if(
             this.blockElementState !== BLOCK_ELEMENT_STATES.routing
             && this.inlineElementState === INLINE_ELEMENT_STATES.routing    // Prevent from processing element twice if a substate is active
@@ -738,7 +584,6 @@ export default class TextStreamStateMachine {
                     console.error('Unknown blockElementState state')
             }
         }
-
 
         if(this.inlineElementState !== INLINE_ELEMENT_STATES.routing) {
             switch(this.inlineElementState) {
@@ -767,7 +612,6 @@ export default class TextStreamStateMachine {
                     console.error('Unknown inlineElementState state')
             }
         }
-
 
     }
 }
