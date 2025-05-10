@@ -141,6 +141,13 @@ function pauseStream() {
   }
 }
 
+function resumeStream() {
+  if (paused) {
+    paused = false;
+    simulateStream(); // Continue the stream from where it was paused
+  }
+}
+
 function processNextToken() {
   if (paused && currentTokenIndex !== null && currentTokenIndex < tokens.length - 1) {
     const nextIndex = currentTokenIndex + 1;
@@ -243,17 +250,24 @@ $: { // Reactive block to parse jsonContent when it changes
       <input type="range" min="10" max="500" step="10" bind:value={delay} class="w-32" />
     </div>
     <div class="flex flex-wrap gap-2">
-      <button class="bg-blue-600 text-white px-3 py-1 rounded shadow hover:bg-blue-700 disabled:opacity-50"
+      <button class="bg-blue-600 text-white px-3 py-1 rounded shadow hover:bg-blue-700 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
               on:click={simulateStream}
-              disabled={streaming && !paused}>
+              disabled={streaming}>
         Simulate stream
       </button>
-      <button class="bg-amber-500 text-white px-3 py-1 rounded shadow hover:bg-amber-600 disabled:opacity-50"
-              on:click={pauseStream}
-              disabled={!streaming || paused}>
-        Pause stream
-      </button>
-      <button class="bg-green-600 text-white px-3 py-1 rounded shadow hover:bg-green-700 disabled:opacity-50"
+      {#if paused}
+        <button class="bg-amber-500 text-white px-3 py-1 rounded shadow hover:bg-amber-600 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+                on:click={resumeStream}>
+          Resume stream
+        </button>
+      {:else}
+        <button class="bg-amber-500 text-white px-3 py-1 rounded shadow hover:bg-amber-600 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+                on:click={pauseStream}
+                disabled={!streaming || paused}>
+          Pause stream
+        </button>
+      {/if}
+      <button class="bg-green-600 text-white px-3 py-1 rounded shadow hover:bg-green-700 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
               on:click={processNextToken}
               disabled={!paused || currentTokenIndex === null || currentTokenIndex >= tokens.length - 1}>
         Process next token
