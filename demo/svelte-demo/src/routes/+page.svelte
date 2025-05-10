@@ -141,6 +141,13 @@ function pauseStream() {
   }
 }
 
+function resumeStream() {
+  if (paused) {
+    paused = false;
+    simulateStream(); // Continue the stream from where it was paused
+  }
+}
+
 function processNextToken() {
   if (paused && currentTokenIndex !== null && currentTokenIndex < tokens.length - 1) {
     const nextIndex = currentTokenIndex + 1;
@@ -243,23 +250,31 @@ $: { // Reactive block to parse jsonContent when it changes
       <input type="range" min="10" max="500" step="10" bind:value={delay} class="w-32" />
     </div>
     <div class="flex flex-wrap gap-2">
-      <button class="bg-blue-600 text-white px-3 py-1 rounded shadow hover:bg-blue-700 disabled:opacity-50"
+      <button class="bg-blue-600 text-white px-3 py-1 rounded shadow hover:bg-blue-700 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
               on:click={simulateStream}
-              disabled={streaming && !paused}>
+              disabled={streaming}>
         Simulate stream
       </button>
-      <button class="bg-amber-500 text-white px-3 py-1 rounded shadow hover:bg-amber-600 disabled:opacity-50"
-              on:click={pauseStream}
-              disabled={!streaming || paused}>
-        Pause stream
-      </button>
-      <button class="bg-green-600 text-white px-3 py-1 rounded shadow hover:bg-green-700 disabled:opacity-50"
+      {#if paused}
+        <button class="bg-amber-500 text-white px-3 py-1 rounded shadow hover:bg-amber-600 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+                on:click={resumeStream}>
+          Resume stream
+        </button>
+      {:else}
+        <button class="bg-amber-500 text-white px-3 py-1 rounded shadow hover:bg-amber-600 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+                on:click={pauseStream}
+                disabled={!streaming || paused}>
+          Pause stream
+        </button>
+      {/if}
+      <button class="bg-green-600 text-white px-3 py-1 rounded shadow hover:bg-green-700 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
               on:click={processNextToken}
               disabled={!paused || currentTokenIndex === null || currentTokenIndex >= tokens.length - 1}>
         Process next token
       </button>
-      <button class="bg-red-600 text-white px-3 py-1 rounded shadow hover:bg-red-700"
-              on:click={resetParser}>
+      <button class="bg-red-600 text-white px-3 py-1 rounded shadow hover:bg-red-700 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+              on:click={resetParser}
+              disabled={!parser && !parsedSegments.length}>
         Reset parser
       </button>
     </div>
@@ -278,13 +293,152 @@ $: { // Reactive block to parse jsonContent when it changes
             {#each block as seg}
               {#if seg.segment?.type === 'header'}
                 {#if seg.segment?.level === 1}
-                  <h1 class="inline text-2xl font-bold">{seg.segment?.segment}</h1>
+                  <h1 class="inline text-2xl font-bold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h1>
                 {:else if seg.segment?.level === 2}
-                  <h2 class="inline text-xl font-bold">{seg.segment?.segment}</h2>
+                  <h2 class="inline text-xl font-bold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h2>
                 {:else if seg.segment?.level === 3}
-                  <h3 class="inline text-lg font-semibold">{seg.segment?.segment}</h3>
+                  <h3 class="inline text-lg font-semibold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h3>
+                {:else if seg.segment?.level === 4}
+                  <h4 class="inline text-base font-semibold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h4>
+                {:else if seg.segment?.level === 5}
+                  <h5 class="inline text-sm font-semibold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h5>
+                {:else if seg.segment?.level === 6}
+                  <h6 class="inline text-xs font-semibold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h6>
                 {:else}
-                  <span class="inline font-semibold">{seg.segment?.segment}</span>
+                  <span class="inline font-semibold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </span>
                 {/if}
               {:else if seg.segment?.type === 'codeBlock'}
                 <pre class="inline bg-gray-100 rounded p-1 font-mono text-sm text-gray-800 overflow-x-auto align-middle"><code>{seg.segment?.segment}</code></pre>
