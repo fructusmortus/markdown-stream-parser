@@ -24,14 +24,16 @@
     ],
     "scripts": {
         "build": "tsup src/markdown-stream-parser.ts --dts --format esm,cjs --minify --out-dir build --no-sourcemap",
-        "debug-parser": "node ./demo/debug-scripts/char-streamer.ts",
+        "debug-parser": "node ./demo/debug-scripts/char-streamer-tree-sitter.ts",
         "prepare": "pnpm run build"
     },
     "devDependencies": {
         "chalk": "*",
         "typescript": "*",
         "tsup": "^8.0.0",
-        "semver": "^7.5.4"
+        "semver": "^7.5.4",
+        "tree-sitter": "^0.21.1",
+        "@tree-sitter-grammars/tree-sitter-markdown": "*"
     },
     "dependencies": {
     },
