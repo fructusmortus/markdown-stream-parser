@@ -246,6 +246,32 @@ Inside the repository root dir run:
 
 This will execute the parser against the selected example stream and print parsed segments to the console.
 
+## Running tests
+
+The project includes comprehensive test coverage with 187 tests across all core functionality. To run the tests:
+
+1. Start the Docker container:
+   ```bash
+   docker compose up -d
+   ```
+
+2. Run all tests:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm test:run
+   ```
+
+3. Run tests in watch mode during development:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm test
+   ```
+
+4. Run tests with coverage reporting:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm test:coverage
+   ```
+
+**Note:** 3 tests are intentionally designed to fail to prove the existence of the known bug with long consecutive character sequences. All other tests should pass.
+
 ---
 
 
@@ -449,7 +475,6 @@ Please feel free to share your thoughts in **[discussions](https://github.com/Li
 
 
 - **Roadmap:**
-  - Tests...
   - Support for the missing markdown features listed earlier.
   - Performance optimizations
   - Build an AST (abstract syntax tree) model to represent the parsed stream in memory
