@@ -227,10 +227,22 @@ Inside the repository root dir run:
 
 2. Run the debug parser inside the container:
    ```bash
-   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser --file=<file-name>.json
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser --file=<file-path>
    ```
 
-   Replace `<file-name>` with the name of one of the `.json` files located in the `llm-streams-examples` directory (this directory is mounted from your host machine into the container).
+   Replace `<file-path>` with the relative path to any `.json` file. Examples:
+   - For files in `llm-streams-examples`: `--file=demo/llm-streams-examples/claude-3.5-1-quantum-physics.json`
+   - For manually created files: `--file=demo/llm-stream-examples-manually-simulated/long-consecutive-sequence.json`
+
+3. **Creating custom test streams**: You can also create your own chunked streams from arbitrary text files using the `split-sample-into-chunks.ts` script:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run split-sample-into-chunks -- --file=<input-file-path> --chunkSize=<chunk-size> --outputPath=<output-file-path>
+   ```
+
+   Example:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run split-sample-into-chunks -- --file=demo/llm-input-examples-raw-text/long-consecutive-sequence.txt --chunkSize=2 --outputPath=demo/llm-stream-examples-manually-simulated/long-consecutive-sequence.json
+   ```
 
 This will execute the parser against the selected example stream and print parsed segments to the console.
 

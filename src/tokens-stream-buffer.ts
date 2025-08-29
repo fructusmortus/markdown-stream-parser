@@ -9,7 +9,7 @@ export default class TokensStreamBuffer {
         this.wordCompleteListeners = []
     }
 
-    private processBufferForCompletion() {
+    public processBufferForCompletion() {
         const pattern = /(\s*\S+\s+|\s*\S+((\n|\\n)+))/g
         let match
         let lastIndex = 0
