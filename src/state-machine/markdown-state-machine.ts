@@ -163,12 +163,17 @@ export default class TextStreamStateMachine {
     }
 
     processInlineStylesGroup(segment: string, styleGroup: string) {
-        if (this.evaluate('is::inlineStyleMarkerFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS[styleGroup].name } })) {
+        const styleGroupConfig = INLINE_STYLE_GROUPS[styleGroup]
+        if (!styleGroupConfig) {
+            throw new Error(`Unknown style group: ${styleGroup}`)
+        }
+
+        if (this.evaluate('is::inlineStyleMarkerFull', { event: { segment }, params: {styleGroup: styleGroupConfig.name } })) {
             this.act('apply::inlineTextStyle', {
                 event: { segment },
                 params: {
                     match: 'full',
-                    styleGroup: INLINE_STYLE_GROUPS[styleGroup].name
+                    styleGroup: styleGroupConfig.name
                 }
             })
 
@@ -181,7 +186,7 @@ export default class TextStreamStateMachine {
                         emitter: this.notifyParsedSegment,
                         isTruncateTrailingNewLine: false,
                         skipStyles: true,
-                        origin: `processing::${INLINE_STYLE_GROUPS[styleGroup].name}::FULL::prefixedContent`,
+                        origin: `processing::${styleGroupConfig.name}::FULL::prefixedContent`,
                         isDebug: IS_DEBUG
                     }
                 })
@@ -194,7 +199,7 @@ export default class TextStreamStateMachine {
                 params: {
                     emitter: this.notifyParsedSegment,
                     isTruncateTrailingNewLine: true,
-                    origin: `processing::${INLINE_STYLE_GROUPS[styleGroup].name}::FULL`,
+                    origin: `processing::${styleGroupConfig.name}::FULL`,
                     isDebug: IS_DEBUG
                 }
             })
@@ -208,7 +213,7 @@ export default class TextStreamStateMachine {
                         emitter: this.notifyParsedSegment,
                         isTruncateTrailingNewLine: true,
                         skipStyles: true,
-                        origin: `processing::${INLINE_STYLE_GROUPS[styleGroup].name}::FULL::postfixedContent`,
+                        origin: `processing::${styleGroupConfig.name}::FULL::postfixedContent`,
                         isDebug: IS_DEBUG
                     }
                 })
@@ -235,14 +240,14 @@ export default class TextStreamStateMachine {
         }
 
         if (
-            this.evaluate('is::inlineStyleMarkerPartialStart', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS[styleGroup].name } }) &&
-            !this.evaluate('is::inlineStyleMarkerFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS[styleGroup].name } })
+            this.evaluate('is::inlineStyleMarkerPartialStart', { event: { segment }, params: {styleGroup: styleGroupConfig.name } }) &&
+            !this.evaluate('is::inlineStyleMarkerFull', { event: { segment }, params: {styleGroup: styleGroupConfig.name } })
         ) {
             this.act('apply::inlineTextStyle', {
                 event: { segment },
                 params: {
                     match: 'partial::start',
-                    styleGroup: INLINE_STYLE_GROUPS[styleGroup].name
+                    styleGroup: styleGroupConfig.name
                 }
             })
 
@@ -255,7 +260,7 @@ export default class TextStreamStateMachine {
                         emitter: this.notifyParsedSegment,
                         isTruncateTrailingNewLine: false,
                         skipStyles: true,
-                        origin: `processing::${INLINE_STYLE_GROUPS[styleGroup].name}::partialSTART::prefixedContent`,
+                        origin: `processing::${styleGroupConfig.name}::partialSTART::prefixedContent`,
                         isDebug: IS_DEBUG
                     }
                 })
@@ -268,7 +273,7 @@ export default class TextStreamStateMachine {
                 params: {
                     emitter: this.notifyParsedSegment,
                     isTruncateTrailingNewLine: true,
-                    origin: `processing::${INLINE_STYLE_GROUPS[styleGroup].name}::partialSTART`,
+                    origin: `processing::${styleGroupConfig.name}::partialSTART`,
                     isDebug: IS_DEBUG
                 }
             })
@@ -277,14 +282,14 @@ export default class TextStreamStateMachine {
         }
 
         if (
-            this.evaluate('is::inlineStyleMarkerPartialEnd', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS[styleGroup].name} }) &&
-            !this.evaluate('is::inlineStyleMarkerFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS[styleGroup].name} })
+            this.evaluate('is::inlineStyleMarkerPartialEnd', { event: { segment }, params: {styleGroup: styleGroupConfig.name} }) &&
+            !this.evaluate('is::inlineStyleMarkerFull', { event: { segment }, params: {styleGroup: styleGroupConfig.name} })
         ) {
             this.act('apply::inlineTextStyle', {
                 event: { segment },
                 params: {
                     match: 'partial::end',
-                    styleGroup: INLINE_STYLE_GROUPS[styleGroup].name
+                    styleGroup: styleGroupConfig.name
                 }
             })
             this.act('buffer::blockContent', { event: { segment: this.context.parsedSegment }, params: {} })
@@ -293,7 +298,7 @@ export default class TextStreamStateMachine {
                 params: {
                     emitter: this.notifyParsedSegment,
                     isTruncateTrailingNewLine: true,
-                    origin: `processing::${INLINE_STYLE_GROUPS[styleGroup].name}::partialEND`,
+                    origin: `processing::${styleGroupConfig.name}::partialEND`,
                     isDebug: IS_DEBUG
                 }
             })
@@ -310,7 +315,7 @@ export default class TextStreamStateMachine {
                         emitter: this.notifyParsedSegment,
                         isTruncateTrailingNewLine: true,
                         skipStyles: true,
-                        origin: `processing::${INLINE_STYLE_GROUPS[styleGroup].name}::partialEND::postfixedContent`,
+                        origin: `processing::${styleGroupConfig.name}::partialEND::postfixedContent`,
                         isDebug: IS_DEBUG
                     }
                 })
@@ -322,8 +327,8 @@ export default class TextStreamStateMachine {
         }
 
         if (
-            !this.evaluate('is::inlineStyleMarkerPartialStart', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS[styleGroup].name } }) &&
-            !this.evaluate('is::inlineStyleMarkerPartialEnd', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS[styleGroup].name } })
+            !this.evaluate('is::inlineStyleMarkerPartialStart', { event: { segment }, params: {styleGroup: styleGroupConfig.name } }) &&
+            !this.evaluate('is::inlineStyleMarkerPartialEnd', { event: { segment }, params: {styleGroup: styleGroupConfig.name } })
         ) {
             this.act('buffer::blockContent', { event: { segment }, params: {} })
             this.act('emit::parsedSegment', {
@@ -331,7 +336,7 @@ export default class TextStreamStateMachine {
                 params: {
                     emitter: this.notifyParsedSegment,
                     isTruncateTrailingNewLine: true,
-                    origin: `processing::${INLINE_STYLE_GROUPS[styleGroup].name}::MIDDLE`,
+                    origin: `processing::${styleGroupConfig.name}::MIDDLE`,
                     isDebug: IS_DEBUG
                 }
             })
@@ -367,6 +372,10 @@ export default class TextStreamStateMachine {
         if (this.context.codeBlockSegmentsBuffer.length > 1) {
             const prevSegment = this.context.codeBlockSegmentsBuffer.shift() // .shift() removes the first element and returns it
             const currentSegment = this.context.codeBlockSegmentsBuffer[0] // Therefore the [0] element is now the current segment
+
+            if (!prevSegment || !currentSegment) {
+                return // Safety check for undefined values
+            }
 
             // Regular code block segment
             if (
@@ -537,27 +546,27 @@ export default class TextStreamStateMachine {
             && this.blockElementState !== BLOCK_ELEMENT_STATES.processingCodeBlock    // We shouldn't even care to evaluate for inline styles when processing code blocks. Code blocks can't have any formatting (obviously...) and also skipping this evaluation makes things a lot more stable
         ) {
             // Detected inline styles (italic), routing to the processingItalicText state
-            if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.italic.name } })) {
+            if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.italic!.name } })) {
                 this.transitionInlineElementState(INLINE_ELEMENT_STATES.processingItalicText)
             }
 
             // Detected inline styles (bold), routing to the processingBoldText state
-            if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.bold.name } })) {
+            if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.bold!.name } })) {
                 this.transitionInlineElementState(INLINE_ELEMENT_STATES.processingBoldText)
             }
 
             // Detected inline styles (boldItalic), routing to the processingBoldItalicText state
-            if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.boldItalic.name } })) {
+            if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.boldItalic!.name } })) {
                 this.transitionInlineElementState(INLINE_ELEMENT_STATES.processingBoldItalicText)
             }
 
             // Detected inline styles (strikethrough), routing to the processingStrikethroughText state
-            if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.strikethrough.name } })) {
+            if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.strikethrough!.name } })) {
                 this.transitionInlineElementState(INLINE_ELEMENT_STATES.processingStrikethroughText)
             }
 
             // Detected inline styles (inlineCode), routing to the processingInlineCode state
-            if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.inlineCode.name } })) {
+            if (this.evaluate('is::inlineStyleMarkerPartialOrFull', { event: { segment }, params: {styleGroup: INLINE_STYLE_GROUPS.inlineCode!.name } })) {
                 this.transitionInlineElementState(INLINE_ELEMENT_STATES.processingInlineCode)
             }
         }
@@ -589,23 +598,23 @@ export default class TextStreamStateMachine {
             switch(this.inlineElementState) {
                 case INLINE_ELEMENT_STATES.processingItalicText:
                     // this.act('debug::parsedSegment', { event: { segment }, params: {origin: STATES.processingItalicText } })
-                    this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.italic.name)
+                    this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.italic!.name)
                     break
 
                 case INLINE_ELEMENT_STATES.processingBoldText:
-                    this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.bold.name)
+                    this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.bold!.name)
                     break
 
                 case INLINE_ELEMENT_STATES.processingBoldItalicText:
-                    this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.boldItalic.name)
+                    this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.boldItalic!.name)
                     break
 
                 case INLINE_ELEMENT_STATES.processingStrikethroughText:
-                    this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.strikethrough.name)
+                    this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.strikethrough!.name)
                     break
 
                 case INLINE_ELEMENT_STATES.processingInlineCode:
-                    this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.inlineCode.name)
+                    this.processInlineStylesGroup(segment, INLINE_STYLE_GROUPS.inlineCode!.name)
                     break
 
                 default:

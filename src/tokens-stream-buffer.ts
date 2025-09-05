@@ -37,6 +37,19 @@ export default class TokensStreamBuffer {
         if (lastIndex > 0) {
             this.buffer = this.buffer.slice(lastIndex)
         }
+
+        // Handle long sequences without whitespace to prevent infinite buffer growth
+        // If buffer is too long and contains only non-whitespace characters, emit chunks to prevent freezing
+        const MAX_BUFFER_SIZE = 100; // Reasonable limit for streaming UX
+        if (this.buffer.length > MAX_BUFFER_SIZE && !/\s/.test(this.buffer)) {
+            // Split the buffer into chunks and emit them
+            const CHUNK_SIZE = 50; // Emit in reasonable chunks
+            while (this.buffer.length > CHUNK_SIZE) {
+                const chunk = this.buffer.slice(0, CHUNK_SIZE);
+                this.notifyWordCompletion(chunk);
+                this.buffer = this.buffer.slice(CHUNK_SIZE);
+            }
+        }
     }
 
     private notifyWordCompletion(word: string) {

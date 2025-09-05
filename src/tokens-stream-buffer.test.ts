@@ -29,8 +29,8 @@ describe('TokensStreamBuffer - Long Consecutive Sequences Bug', () => {
     expect(emittedSegments).toEqual(['Hello ', 'world! '])
   })
 
-  it('SHOULD FAIL: proves the core freeze bug - chunks without whitespace dont emit', () => {
-    // Test the exact condition that causes the freeze
+  it('should emit chunks for sequences without whitespace to prevent buffer overflow', () => {
+    // Test the exact condition that previously caused infinite buffer growth
 
     // These chunks have whitespace - they should emit
     buffer.receiveChunk('hello ')
@@ -38,38 +38,38 @@ describe('TokensStreamBuffer - Long Consecutive Sequences Bug', () => {
 
     expect(emittedSegments.length).toBe(2) // Should pass
 
-    // Now add chunks WITHOUT whitespace - these should NOT emit (proving the bug)
-    const chunksWithoutWhitespace = ['AB', 'CD', 'EF', 'GH', 'IJ']
-
-    for (const chunk of chunksWithoutWhitespace) {
-      buffer.receiveChunk(chunk)
+    // Now add many chunks WITHOUT whitespace - these should now emit in chunks
+    let chunksWithoutWhitespace = ''
+    for (let i = 0; i < 25; i++) { // Create 150 chars without whitespace
+      chunksWithoutWhitespace += 'ABCDEF'
     }
 
-    // This should fail: we added 5 more chunks but got no new emissions
-    expect(emittedSegments.length).toBeGreaterThan(2) // SHOULD FAIL - proves the bug
+    // Add it in small chunks to simulate streaming
+    for (let i = 0; i < chunksWithoutWhitespace.length; i += 2) {
+      buffer.receiveChunk(chunksWithoutWhitespace.slice(i, i + 2))
+    }
 
-    // Buffer should contain accumulated content
-    expect(buffer.buffer).toBe('ABCDEFGHIJ') // Should pass - proves accumulation
+    // This should now pass: we should get emissions even without whitespace
+    expect(emittedSegments.length).toBeGreaterThan(2) // Should now PASS - bug is fixed
+
+    // Buffer should not grow infinitely
+    expect(buffer.buffer.length).toBeLessThan(100) // Should pass - buffer is limited
   })
 
-  it('SHOULD FAIL: demonstrates buffer grows infinitely without whitespace', () => {
+  it('should prevent infinite buffer growth through chunking', () => {
     // Start with empty buffer
     expect(buffer.buffer.length).toBe(0)
 
-    // Add many chunks without whitespace
-    for (let i = 0; i < 20; i++) {
+    // Add many chunks without whitespace to exceed buffer limit
+    for (let i = 0; i < 60; i++) { // 60 * 2 = 120 characters > 100 limit
       buffer.receiveChunk('XX')
     }
 
-    // No emissions should happen
-    expect(emittedSegments.length).toBe(0) // Should pass
+    // Should have emissions due to chunking mechanism
+    expect(emittedSegments.length).toBeGreaterThan(0) // Emissions happen when buffer limit reached
 
-    // Buffer should have grown to 40 characters
-    expect(buffer.buffer.length).toBe(40) // Should pass
-
-    // This proves the bug: buffer grows indefinitely without emission
-    // In real scenario, this leads to memory issues and freezing
-    expect(buffer.buffer.length).toBeLessThan(10) // SHOULD FAIL - proves buffer accumulation bug
+    // Buffer should be limited in size (not infinite growth)
+    expect(buffer.buffer.length).toBeLessThan(100) // Should now pass - buffer is limited
   })
 
   it('should eventually emit when whitespace is added after long sequence', () => {
@@ -122,10 +122,22 @@ describe('TokensStreamBuffer - Long Consecutive Sequences Bug', () => {
     // This proves the root cause: regex only matches strings with trailing whitespace/newlines
   })
 
-  it('SHOULD FAIL: reproduces issue with real problematic data pattern (limited to avoid hang)', () => {
-    // Use the pattern from the actual problematic file but limit it to avoid hanging
+  it('should handle problematic data patterns without performance degradation', () => {
+    // Use the pattern from actual problematic streaming scenarios
     const problematicFile = path.join(__dirname, '../demo/llm-stream-examples-manually-simulated/long-consecutive-sequence.json')
-    const problematicData = JSON.parse(fs.readFileSync(problematicFile, 'utf-8'))
+
+    // Check if file exists, if not create a simple test
+    let problematicData: string[]
+    try {
+      problematicData = JSON.parse(fs.readFileSync(problematicFile, 'utf-8'))
+    } catch {
+      // Fallback: create our own problematic sequence
+      problematicData = ['Hello ', 'world ', '= ']
+      // Add a long base64-like sequence without spaces
+      for (let i = 0; i < 50; i++) {
+        problematicData.push('A1B2C3')
+      }
+    }
 
     // Process initial chunks that work normally (they have whitespace)
     const initialChunks = problematicData.slice(0, 10)
@@ -136,24 +148,27 @@ describe('TokensStreamBuffer - Long Consecutive Sequences Bug', () => {
     const initialEmissions = emittedSegments.length
     expect(initialEmissions).toBeGreaterThan(0) // Should have some emissions
 
-    // Now find and process the problematic base64 sequence (without whitespace)
-    const base64StartIndex = problematicData.findIndex((chunk: string) => chunk === '= ') + 2
+    // Now find and process a long sequence without whitespace
+    let sequenceStart = 10
+    const base64StartIndex = problematicData.findIndex((chunk: string) => chunk === '= ')
     if (base64StartIndex > 1) {
-      // Take only 30 chunks to avoid hanging, but enough to prove the bug
-      const problematicSequence = problematicData.slice(base64StartIndex, base64StartIndex + 30)
-
-      for (const chunk of problematicSequence) {
-        buffer.receiveChunk(chunk)
-      }
-
-      const finalEmissions = emittedSegments.length
-
-      // This should fail: we processed 30+ base64 chunks but got no new emissions
-      expect(finalEmissions).toBeGreaterThan(initialEmissions) // SHOULD FAIL - proves the freeze bug
-
-      // Buffer should have accumulated content
-      expect(buffer.buffer.length).toBeGreaterThan(0) // Should pass
+      sequenceStart = base64StartIndex + 2
     }
+
+    // Process a longer sequence to test the fix
+    const problematicSequence = problematicData.slice(sequenceStart, sequenceStart + 50)
+
+    for (const chunk of problematicSequence) {
+      buffer.receiveChunk(chunk)
+    }
+
+    const finalEmissions = emittedSegments.length
+
+    // This should now pass: we should get emissions even from the problematic sequence
+    expect(finalEmissions).toBeGreaterThan(initialEmissions) // Should now PASS - bug is fixed
+
+    // Buffer should not grow infinitely
+    expect(buffer.buffer.length).toBeLessThan(100) // Should pass - buffer is limited
   })
 
   it('demonstrates the exact freeze scenario with safe limits', () => {
@@ -299,7 +314,10 @@ describe('TokensStreamBuffer - Comprehensive Tests', () => {
       buffer.receiveChunk(longWord)
       buffer.receiveChunk(' ')
 
-      expect(emittedSegments).toEqual([`${longWord} `])
+      // With chunking enabled, long words get broken into chunks
+      // The total content should be preserved
+      const totalEmitted = emittedSegments.join('')
+      expect(totalEmitted).toBe(`${longWord} `)
       expect(buffer.buffer).toBe('')
     })
 
@@ -523,6 +541,70 @@ describe('TokensStreamBuffer - Comprehensive Tests', () => {
 
       expect(emittedSegments.length).toBeGreaterThan(0)
       expect(emittedSegments.join('')).toBe(markdownChunks.join(''))
+    })
+  })
+
+  describe('Buffer Overflow Protection', () => {
+    it('should emit chunks when buffer exceeds size limit without whitespace', () => {
+      // Verifies chunking behavior for long sequences without word boundaries
+
+      // Add some normal content first
+      buffer.receiveChunk('Normal ')
+      buffer.receiveChunk('text ')
+      expect(emittedSegments.length).toBe(2)
+
+      // Now add a very long sequence without whitespace that would exceed buffer limit
+      const longSequence = 'a'.repeat(150) // Much longer than MAX_BUFFER_SIZE (100)
+
+      // Add it character by character to simulate streaming
+      for (let i = 0; i < longSequence.length; i++) {
+        buffer.receiveChunk(longSequence[i])
+      }
+
+      // Flush any remaining content
+      buffer.flushBuffer()
+
+      // With the fix, we should see chunked emissions before the buffer gets too large
+      expect(emittedSegments.length).toBeGreaterThan(2)
+
+      // The total content should still be preserved
+      const totalEmitted = emittedSegments.join('')
+      expect(totalEmitted).toBe('Normal text ' + longSequence)
+
+      // Buffer should never grow too large (should be chunked before hitting limit)
+      expect(buffer.buffer.length).toBeLessThan(100)
+    })
+
+    it('should handle mixed content with overflow protection', () => {
+      // Test mixing normal word-boundary content with long sequences
+
+      buffer.receiveChunk('Start ')
+      buffer.receiveChunk('with ')
+      buffer.receiveChunk('normal ')
+      buffer.receiveChunk('words ')
+
+      expect(emittedSegments.length).toBe(4)
+
+      // Add problematic content (long sequence without spaces)
+      const problematicContent = 'base64data' + 'X'.repeat(120) + 'moredata' // 10 + 120 + 8 = 138 chars > 100 limit
+
+      for (let i = 0; i < problematicContent.length; i++) {
+        buffer.receiveChunk(problematicContent[i])
+      }
+
+      // Should have emitted chunks to prevent buffer overflow
+      expect(emittedSegments.length).toBeGreaterThan(4)
+
+      // Add more normal content
+      buffer.receiveChunk(' ')
+      buffer.receiveChunk('end')
+
+      // Flush any remaining content
+      buffer.flushBuffer()
+
+      // Verify all content is preserved
+      const totalContent = emittedSegments.join('')
+      expect(totalContent).toBe('Start with normal words ' + problematicContent + ' end')
     })
   })
 });
