@@ -227,12 +227,50 @@ Inside the repository root dir run:
 
 2. Run the debug parser inside the container:
    ```bash
-   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser --file=<file-name>.json
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser --file=<file-path>
    ```
 
-   Replace `<file-name>` with the name of one of the `.json` files located in the `llm-streams-examples` directory (this directory is mounted from your host machine into the container).
+   Replace `<file-path>` with the relative path to any `.json` file. Examples:
+   - For files in `llm-streams-examples`: `--file=demo/llm-streams-examples/claude-3.5-1-quantum-physics.json`
+   - For manually created files: `--file=demo/llm-stream-examples-manually-simulated/long-consecutive-sequence.json`
+
+3. **Creating custom test streams**: You can also create your own chunked streams from arbitrary text files using the `split-sample-into-chunks.ts` script:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run split-sample-into-chunks -- --file=<input-file-path> --chunkSize=<chunk-size> --outputPath=<output-file-path>
+   ```
+
+   Example:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run split-sample-into-chunks -- --file=demo/llm-input-examples-raw-text/long-consecutive-sequence.txt --chunkSize=2 --outputPath=demo/llm-stream-examples-manually-simulated/long-consecutive-sequence.json
+   ```
 
 This will execute the parser against the selected example stream and print parsed segments to the console.
+
+## Running tests
+
+The project includes comprehensive test coverage with 187 tests across all core functionality. To run the tests:
+
+1. Start the Docker container:
+   ```bash
+   docker compose up -d
+   ```
+
+2. Run all tests:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm test:run
+   ```
+
+3. Run tests in watch mode during development:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm test
+   ```
+
+4. Run tests with coverage reporting:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm test:coverage
+   ```
+
+**Note:** 3 tests are intentionally designed to fail to prove the existence of the known bug with long consecutive character sequences. All other tests should pass.
 
 ---
 
@@ -437,7 +475,6 @@ Please feel free to share your thoughts in **[discussions](https://github.com/Li
 
 
 - **Roadmap:**
-  - Tests...
   - Support for the missing markdown features listed earlier.
   - Performance optimizations
   - Build an AST (abstract syntax tree) model to represent the parsed stream in memory

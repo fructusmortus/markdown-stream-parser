@@ -67,14 +67,14 @@ const setHeader = (
     event: ActionEvent,
     params: ActionParams
 ) => {
-    const match = (event.segment ?? '').match(REGEX.headerMarker);
+    const match = (event.segment ?? '').match(REGEX.headerMarker!);
     if (match) {
-        const hashes = match[1]
-        const headerFirstSegment = match[2] // The first segment of the header
+        const hashes = match[1]!
+        const headerFirstSegment = match[2]! // The first segment of the header
 
         return {
             blockType: BLOCK_TYPES.header,
-            headerLevel: hashes.length -1,
+            headerLevel: hashes.length - 1,
             isBlockDefining: true, // Mark as blockDefining when transitioning to a new block type
         }
     }
@@ -109,7 +109,7 @@ const applyInlineTextStyle = (
                 content: content || '',
                 closingStyleMarker: closingStyleMarker || '',
                 postfixedContent: postfixedContent || ''
-            }))((event.segment ?? '').match(INLINE_STYLE_GROUPS[styleGroup].regex.full) || []);
+            }))((event.segment ?? '').match(INLINE_STYLE_GROUPS[styleGroup]!.regex.full) || []);
             break;
         case 'partial::start':
             matchObject = (([
@@ -122,7 +122,7 @@ const applyInlineTextStyle = (
                 prefixedContent: prefixedContent || '',
                 openingStyleMarker: openingStyleMarker || '',
                 content: content || '',
-            }))((event.segment ?? '').match(INLINE_STYLE_GROUPS[styleGroup].regex.partialStart) || []);
+            }))((event.segment ?? '').match(INLINE_STYLE_GROUPS[styleGroup]!.regex.partialStart) || []);
             break;
         case 'partial::end':
             matchObject = (([
@@ -135,7 +135,7 @@ const applyInlineTextStyle = (
                 content: content || '',
                 closingStyleMarker: closingStyleMarker || '',
                 postfixedContent: postfixedContent || ''
-            }))((event.segment ?? '').match(INLINE_STYLE_GROUPS[styleGroup].regex.partialEnd) || []);
+            }))((event.segment ?? '').match(INLINE_STYLE_GROUPS[styleGroup]!.regex.partialEnd) || []);
             break;
     }
 
@@ -149,7 +149,7 @@ const applyInlineTextStyle = (
         prefixedContent: matchObject.prefixedContent,
         postfixedContent: matchObject.postfixedContent,
         parsedSegment,
-        styles: INLINE_STYLE_GROUPS[styleGroup].styles,
+        styles: INLINE_STYLE_GROUPS[styleGroup]!.styles,
     }
 }
 
@@ -177,7 +177,7 @@ const setCodeBlock = (
         backticks: backticks || '',
         codeLanguage: codeLanguage || '',
         postfixedContent: postfixedContent || '',
-    }))((event.segment ?? '').match(REGEX.codeBlockStartMarker) || []);
+    }))((event.segment ?? '').match(REGEX.codeBlockStartMarker!) || []);
 
     return {
         blockType: BLOCK_TYPES.codeBlock,
@@ -319,5 +319,5 @@ export const actionRunner = (
     if (ACTIONS.hasOwnProperty(actionName) === false) {
         throw new Error(`No action found for: ${actionName}`);
     }
-    return ACTIONS[actionName](context, event, params);
+    return ACTIONS[actionName]!(context, event, params);
 }

@@ -1,7 +1,7 @@
 {
     "name": "@lixpi/markdown-stream-parser",
     "private": false,
-    "version": "0.0.3-33",
+    "version": "0.0.3-34",
     "type": "module",
     "description": "An incremental parser for LLM Markdown streams.",
     "main": "build/markdown-stream-parser.cjs",
@@ -25,13 +25,18 @@
     "scripts": {
         "build": "tsup src/markdown-stream-parser.ts --dts --format esm,cjs --minify --out-dir build --no-sourcemap",
         "debug-parser": "node ./demo/debug-scripts/char-streamer.ts",
+        "split-sample-into-chunks": "node ./demo/debug-scripts/split-sample-into-chunks.ts",
+        "test": "vitest",
+        "test:run": "vitest run",
         "prepare": "pnpm run build"
     },
     "devDependencies": {
         "chalk": "*",
         "typescript": "*",
         "tsup": "^8.0.0",
-        "semver": "^7.5.4"
+        "semver": "^7.5.4",
+        "vitest": "^2.0.0",
+        "@vitest/ui": "^2.0.0"
     },
     "dependencies": {
     },

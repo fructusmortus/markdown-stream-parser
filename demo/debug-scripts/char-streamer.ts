@@ -7,7 +7,7 @@ import { MarkdownStreamParser } from '../../src/markdown-stream-parser.ts'
 // Parse CLI arguments
 const args = process.argv.slice(2);
 let DELAY = 0;
-let fileName = '';
+let filePath = '';
 
 for (const arg of args) {
     if (arg.startsWith('--interval=')) {
@@ -15,17 +15,17 @@ for (const arg of args) {
         if (!isNaN(val)) DELAY = val;
     }
     if (arg.startsWith('--file=')) {
-        fileName = arg.split('=')[1];
+        filePath = arg.split('=')[1];
     }
 }
 
-if (!fileName) {
+if (!filePath) {
     throw new Error('Missing required argument: --file=<path-to-file>');
 }
 
-const sourceFile = `/usr/src/service/demo/llm-streams-examples/${fileName}`;
+const sourceFile = `/usr/src/service/${filePath}`;
 
-const markdownStreamParser = MarkdownStreamParser.getInstance(fileName)
+const markdownStreamParser = MarkdownStreamParser.getInstance(filePath)
 
 type JSONChunk = string | object; // Adjust as needed for your JSON structure
 
@@ -69,7 +69,7 @@ markdownStreamParser.subscribeToTokenParse(
         // At the end of the stream, unsubscribe from the parser service
         if (parsedSegment.status === 'END_STREAM') {
             unsubscribe()
-            MarkdownStreamParser.removeInstance(fileName)
+            MarkdownStreamParser.removeInstance(filePath)
         }
     }
 )
