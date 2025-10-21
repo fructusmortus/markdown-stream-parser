@@ -10,17 +10,20 @@ let examples: ExampleFile[] = [];
 let selectedExample: ExampleFile | null = null;
 let delay = 80;
 let streaming = false;
+let paused = false;
 let tokens: string[] = [];
 let txtContent = '';
 let jsonContent = '';
-let parsedSegments: any[] = [];
-let parsedBlocks: any[][] = [];
+let parsedSegments: StreamingChunk[] = [];
+let parsedBlocks: StreamingChunk[][] = [];
 let currentToken = '';
-let currentParsedChunk: any = null;
+let currentParsedChunks: StreamingChunk[] = [];
 let error = '';
-let jsonItems: string[] = []; // Add state for parsed JSON items
-let currentTokenIndex: number | null = null; // Track the index of the current token
+let jsonItems: string[] = [];
+let currentTokenIndex: number | null = null;
 let parserInitialized = false;
+let parser: MarkdownStreamParser | null = null;
+let parserId: string = '';
 
 async function loadExamples() {
   try {
@@ -36,12 +39,11 @@ async function loadSelectedFiles() {
   if (!selectedExample) return;
   try {
     const [jsonRes, txtRes] = await Promise.all([
-      fetch(selectedExample.json),
-      fetch(selectedExample.txt),
+    fetch(selectedExample.json),
+    fetch(selectedExample.txt),
     ]);
     tokens = await jsonRes.json();
     txtContent = await txtRes.text();
-    // Fetch raw JSON as text for display
     const rawJsonRes = await fetch(selectedExample.json);
     jsonContent = await rawJsonRes.text();
   } catch (e) {
@@ -50,81 +52,151 @@ async function loadSelectedFiles() {
 }
 
 function handleExampleChange() {
-  parsedSegments = [];
-  currentToken = '';
-  currentParsedChunk = null;
-  currentTokenIndex = null; // Reset index on example change
+  resetParser();
 }
 
-async function simulateStream() {
-  if (!selectedExample) return;
-  streaming = true;
+async function initializeParser() {
   parsedSegments = [];
   currentToken = '';
-  currentParsedChunk = null;
-  currentTokenIndex = null; // Reset index before starting
+  currentParsedChunks = [];
+  currentTokenIndex = null;
   error = '';
-
-  const parserId = 'demo-' + Date.now();
+  
+  parserId = 'demo-' + Date.now();
+  
   try {
-    // getInstance returns a Promise, so we need to await it
-    const parser = await MarkdownStreamParser.getInstance(parserId);
+    parser = await MarkdownStreamParser.getInstance(parserId);
     parser.startParsing();
     
-    // Subscribe to token parsing with proper typing
-    const unsub = parser.subscribeToTokenParse((parsed: StreamingChunk, unsubscribe: () => void) => {
+    parser.subscribeToTokenParse((parsed: StreamingChunk, unsubscribe: () => void) => {
       if (parsed.status === 'END_STREAM') {
-        currentParsedChunk = parsed;
         parsedSegments = [...parsedSegments, parsed];
         unsubscribe();
         MarkdownStreamParser.removeInstance(parserId);
         streaming = false;
+        paused = false;
         currentTokenIndex = null;
         currentToken = '';
+        parser = null;
       } else if (parsed.status === 'START_STREAM') {
-        // Handle stream start if needed
-        currentParsedChunk = parsed;
         parsedSegments = [...parsedSegments, parsed];
       } else if (parsed.status === 'STREAMING') {
         parsedSegments = [...parsedSegments, parsed];
-        currentParsedChunk = parsed;
+        
+        if (streaming || paused) {
+          currentParsedChunks = [...currentParsedChunks, parsed];
+        }
       }
     });
-    
-    for (let i = 0; i < tokens.length; i++) {
-      if (!streaming) {
-        currentTokenIndex = null;
-        currentToken = '';
-        break;
-      }
-      currentTokenIndex = i;
-      currentToken = tokens[i];
-      
-      // parseToken might return an error
-      const parseError = parser.parseToken(tokens[i]);
-      if (parseError) {
-        console.error('Parse error:', parseError);
-        error = `Parse error: ${parseError.message}`;
-        break;
-      }
-      
-      await new Promise((r) => setTimeout(r, delay));
-    }
-    
-    parser.stopParsing();
-    streaming = false;
-    
-    if (currentTokenIndex !== null) {
-      currentTokenIndex = null;
-      currentToken = '';
-    }
   } catch (e) {
     console.error('Failed to initialize parser:', e);
     error = `Failed to initialize parser: ${e}`;
     streaming = false;
+    parser = null;
+  }
+}
+
+async function simulateStream() {
+  if (!selectedExample) return;
+  
+  if (!parser || !streaming) {
+    streaming = true;
+    paused = false;
+    await initializeParser();
+  }
+  
+  if (!parser) {
+    error = 'Parser initialization failed';
+    return;
+  }
+  
+  for (let i = currentTokenIndex !== null ? currentTokenIndex + 1 : 0; i < tokens.length; i++) {
+    if (!streaming || paused) {
+      if (paused) {
+        currentTokenIndex = i - 1;
+      } else {
+        currentTokenIndex = null;
+        currentToken = '';
+        currentParsedChunks = [];
+      }
+      break;
+    }
+    
+    currentParsedChunks = [];
+    currentTokenIndex = i;
+    currentToken = tokens[i];
+    
+    const parseError = parser.parseToken(tokens[i]);
+    if (parseError) {
+      console.error('Parse error:', parseError);
+      error = `Parse error: ${parseError.message}`;
+      break;
+    }
+    
+    await new Promise((r) => setTimeout(r, delay));
+  }
+  
+  if (streaming && !paused && currentTokenIndex === tokens.length - 1) {
+    parser.stopParsing();
+    streaming = false;
     currentTokenIndex = null;
     currentToken = '';
+    currentParsedChunks = [];
+    parser = null;
   }
+}
+
+function pauseStream() {
+  if (streaming && !paused) {
+    paused = true;
+  }
+}
+
+function resumeStream() {
+  if (paused) {
+    paused = false;
+    simulateStream();
+  }
+}
+
+function processNextToken() {
+  if (paused && parser && currentTokenIndex !== null && currentTokenIndex < tokens.length - 1) {
+    const nextIndex = currentTokenIndex + 1;
+    currentParsedChunks = [];
+    currentTokenIndex = nextIndex;
+    currentToken = tokens[nextIndex];
+    
+    const parseError = parser.parseToken(tokens[nextIndex]);
+    if (parseError) {
+      console.error('Parse error:', parseError);
+      error = `Parse error: ${parseError.message}`;
+      return;
+    }
+    
+    if (nextIndex === tokens.length - 1) {
+      parser.stopParsing();
+      streaming = false;
+      paused = false;
+      parser = null;
+    }
+  }
+}
+
+function resetParser() {
+  if (parser) {
+    parser.stopParsing();
+    MarkdownStreamParser.removeInstance(parserId);
+    parser = null;
+  }
+  
+  parsedSegments = [];
+  parsedBlocks = [];
+  currentToken = '';
+  currentParsedChunks = [];
+  currentTokenIndex = null;
+  streaming = false;
+  paused = false;
+  error = '';
 }
 
 $: parsedBlocks = (() => {
@@ -132,7 +204,6 @@ $: parsedBlocks = (() => {
   let currentBlock: StreamingChunk[] = [];
   
   for (const seg of parsedSegments) {
-    // Skip status messages in block grouping
     if (seg.status === 'START_STREAM' || seg.status === 'END_STREAM') {
       continue;
     }
@@ -149,7 +220,6 @@ $: parsedBlocks = (() => {
 })();
 
 onMount(async () => {
-  // Initialize the parser early to load WASM
   try {
     const tempParser = await MarkdownStreamParser.getInstance('init');
     MarkdownStreamParser.removeInstance('init');
@@ -167,7 +237,7 @@ $: if (selectedExample) {
   loadSelectedFiles();
 }
 
-$: { // Reactive block to parse jsonContent when it changes
+$: {
   if (jsonContent) {
     try {
       const parsed = JSON.parse(jsonContent);
@@ -175,11 +245,11 @@ $: { // Reactive block to parse jsonContent when it changes
         jsonItems = parsed;
       } else {
         console.error("Parsed jsonContent is not an array:", parsed);
-        jsonItems = []; // Reset or handle as appropriate
+        jsonItems = [];
       }
     } catch (e) {
       console.error("Failed to parse jsonContent:", e);
-      jsonItems = []; // Reset on error
+      jsonItems = [];
     }
   } else {
     jsonItems = [];
@@ -208,9 +278,35 @@ $: { // Reactive block to parse jsonContent when it changes
       <label class="text-sm">Delay: {delay}ms</label>
       <input type="range" min="10" max="500" step="10" bind:value={delay} class="w-32" />
     </div>
-    <button class="bg-blue-600 text-white px-3 py-1 rounded shadow hover:bg-blue-700 disabled:opacity-50" on:click={simulateStream} disabled={streaming}>
-      Simulate stream
-    </button>
+    <div class="flex flex-wrap gap-2">
+      <button class="bg-blue-600 text-white px-3 py-1 rounded shadow hover:bg-blue-700 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+              on:click={simulateStream}
+              disabled={streaming}>
+        Simulate stream
+      </button>
+      {#if paused}
+        <button class="bg-amber-500 text-white px-3 py-1 rounded shadow hover:bg-amber-600 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+                on:click={resumeStream}>
+          Resume stream
+        </button>
+      {:else}
+        <button class="bg-amber-500 text-white px-3 py-1 rounded shadow hover:bg-amber-600 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+                on:click={pauseStream}
+                disabled={!streaming || paused}>
+          Pause stream
+        </button>
+      {/if}
+      <button class="bg-green-600 text-white px-3 py-1 rounded shadow hover:bg-green-700 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+              on:click={processNextToken}
+              disabled={!paused || currentTokenIndex === null || currentTokenIndex >= tokens.length - 1}>
+        Process next token
+      </button>
+      <button class="bg-red-600 text-white px-3 py-1 rounded shadow hover:bg-red-700 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:opacity-50"
+              on:click={resetParser}
+              disabled={!parser && !parsedSegments.length}>
+        Reset parser
+      </button>
+    </div>
     {#if error}
       <span class="text-red-600 ml-4 self-center">{error}</span>
     {/if}
@@ -226,13 +322,152 @@ $: { // Reactive block to parse jsonContent when it changes
             {#each block as seg}
               {#if seg.segment?.type === 'header'}
                 {#if seg.segment?.level === 1}
-                  <h1 class="inline text-2xl font-bold">{seg.segment?.segment}</h1>
+                  <h1 class="inline text-2xl font-bold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h1>
                 {:else if seg.segment?.level === 2}
-                  <h2 class="inline text-xl font-bold">{seg.segment?.segment}</h2>
+                  <h2 class="inline text-xl font-bold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h2>
                 {:else if seg.segment?.level === 3}
-                  <h3 class="inline text-lg font-semibold">{seg.segment?.segment}</h3>
+                  <h3 class="inline text-lg font-semibold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h3>
+                {:else if seg.segment?.level === 4}
+                  <h4 class="inline text-base font-semibold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h4>
+                {:else if seg.segment?.level === 5}
+                  <h5 class="inline text-sm font-semibold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h5>
+                {:else if seg.segment?.level === 6}
+                  <h6 class="inline text-xs font-semibold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </h6>
                 {:else}
-                  <span class="inline font-semibold">{seg.segment?.segment}</span>
+                  <span class="inline font-semibold">
+                    {#if seg.segment?.styles?.length}
+                      <span class={
+                        seg.segment.styles.includes('bold') && seg.segment.styles.includes('italic') ? 'font-bold italic' :
+                        seg.segment.styles.includes('bold') ? 'font-bold' :
+                        seg.segment.styles.includes('italic') ? 'italic' :
+                        ''
+                      }>
+                        {#if seg.segment.styles.includes('strikethrough')}
+                          <span class="line-through">{seg.segment?.segment}</span>
+                        {:else if seg.segment.styles.includes('code')}
+                          <code class="bg-gray-200 rounded px-1 text-sm font-mono">{seg.segment?.segment}</code>
+                        {:else}
+                          {seg.segment?.segment}
+                        {/if}
+                      </span>
+                    {:else}
+                      {seg.segment?.segment}
+                    {/if}
+                  </span>
                 {/if}
               {:else if seg.segment?.type === 'codeBlock'}
                 <pre class="inline bg-gray-100 rounded p-1 font-mono text-sm text-gray-800 overflow-x-auto align-middle"><code>{seg.segment?.segment}</code></pre>
@@ -272,10 +507,17 @@ $: { // Reactive block to parse jsonContent when it changes
         <h2 class="font-bold mb-2 text-lg">Current Token</h2>
         <pre class="font-mono text-blue-700 text-lg break-all whitespace-pre-wrap">{JSON.stringify(currentToken, null, 2)}</pre>
       </div>
-      <div class="bg-white rounded shadow p-4 min-h-[180px]">
-        <h2 class="font-bold mb-2 text-lg">Parsed Chunk</h2>
-        {#if currentParsedChunk}
-          <pre class="font-mono text-gray-800 text-sm whitespace-pre-wrap">{JSON.stringify(currentParsedChunk, null, 2)}</pre>
+      <div class="bg-white rounded shadow p-4 min-h-[180px] overflow-auto">
+        <h2 class="font-bold mb-2 text-lg">Parsed Chunks</h2>
+        {#if currentParsedChunks.length > 0}
+          {#each currentParsedChunks as chunk, index}
+            <div class="mb-2">
+              <div class="text-xs font-semibold text-gray-500 mb-1">{index + 1} of {currentParsedChunks.length}</div>
+              <pre class="font-mono text-gray-800 text-sm whitespace-pre-wrap">{JSON.stringify(chunk, null, 2)}</pre>
+            </div>
+          {/each}
+        {:else}
+          <div class="text-gray-500 italic">No parsed chunks for this token</div>
         {/if}
       </div>
     </div>

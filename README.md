@@ -4,9 +4,13 @@ A library designed to incrementally parse Markdown text from a stream of tokens.
 
 It's built to handle the ambiguities of LLM-generated streams, which often produce imperfect or invalid Markdown. It combines a finite state machine with regex patterns to determine the best match for each segment.
 
+## This project is an **open-ended** research on how to incrementally parse LLM-streams.
+
 ### ⚠️ ***Please note that this project is in an early stage of development, so there are MANY bugs and missing features.***
 
-Giving this repository a star ***★*** is a great way to encourage faster development!
+### 🛑 All feature development is blocked by this *[research task](https://github.com/Lixpi/markdown-stream-parser/issues/5)* which would bring a complete re-imagining of the code. Stay tuned...
+
+<br>
 
 ### DEMO: [markdown-stream-parser.lixpi.org](https://markdown-stream-parser.lixpi.org)
 
@@ -24,10 +28,20 @@ npm i @lixpi/markdown-stream-parser
 yarn add @lixpi/markdown-stream-parser
 ```
 
-Or just clone the repository and import it directly from the source:
+Or just clone the repository and import it directly from the source.
 
-```javascript
-import { MarkdownStreamParser } from '../src/markdown-stream-parser.ts'
+### Importing
+
+The parser supports both ES6 module and CommonJS (Node.js) import styles.
+
+**ES6 import:**
+```typescript
+import { MarkdownStreamParser } from '@lixpi/markdown-stream-parser'
+```
+
+**CommonJS require:**
+```typescript
+const { MarkdownStreamParser } = require('@lixpi/markdown-stream-parser')
 ```
 
 Can be used on a backend or frontend, there's no rendering logic involved.
@@ -163,16 +177,12 @@ The output is a series of objects containing the content of a parsed segment, th
 
 Good question. You can use this stream to render styled content in your application in real time. Having a `segment type` and `inline styles` is enough to style it however you want.
 
-Over time, more features will be added, such as building an AST (abstract syntax tree) to provide an in-memory representation of parsed content and handling the ambiguities of various LLMs more effectively.
-It may even expand beyond standard markdown to allow custom styling combinations.
-
-But it will **always remain `render-agnostic`** - whatever you use to render your styled text is entirely up to you.
+It will **always remain `render-agnostic`** - whatever you use to render your styled text is entirely up to you.
 
 
 ## Features
 
 - [x] Headers (`# H1`, `## H2`, etc.)
-  - [ ] //TODO: PRIORITY, inline styles for headers. Should be super easy because the parser already supports inline styles.
 - [x] Paragraphs
 - [x] Inline styles
   - [x] Inline Italic (`*text*`)
@@ -181,11 +191,11 @@ But it will **always remain `render-agnostic`** - whatever you use to render you
   - [x] Inline Strikethrough (`~~text~~`)
   - [x] Inline Code (`` `code` ``)
 - [x] Code Blocks (```` ```code-block``` ````) with language detection
-- [ ] Blockquotes (`> quote`)
-- [ ] //TODO: PRIORITY: Ordered Lists (`1. item`)
-- [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`)
-- [ ] //TODO: Task Lists (`- [ ] item`)
-- [ ] //TODO: PRIORITY: Tables
+- [ ] Blockquotes (`> quote`) [Iusse #2](https://github.com/Lixpi/markdown-stream-parser/issues/2)
+- [ ] //TODO: PRIORITY: Ordered Lists (`1. item`) [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
+- [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`) *BLOCKED BY:* [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
+- [ ] //TODO: Task Lists (`- [ ] item`) *BLOCKED BY:* [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
+- [ ] //TODO: PRIORITY: Tables [Iusse #7](https://github.com/Lixpi/markdown-stream-parser/issues/7)
 - [ ] //TODO: PRIORITY: Links (`[text](url)`)
 - [ ] //TODO: PRIORITY: Images (`![alt](url)`)
 - [ ] //TODO: Horizontal Rules (`---`, `***`, `___`)
@@ -217,12 +227,50 @@ Inside the repository root dir run:
 
 2. Run the debug parser inside the container:
    ```bash
-   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser --file=<file-name>.json
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser --file=<file-path>
    ```
 
-   Replace `<file-name>` with the name of one of the `.json` files located in the `llm-streams-examples` directory (this directory is mounted from your host machine into the container).
+   Replace `<file-path>` with the relative path to any `.json` file. Examples:
+   - For files in `llm-streams-examples`: `--file=demo/llm-streams-examples/claude-3.5-1-quantum-physics.json`
+   - For manually created files: `--file=demo/llm-stream-examples-manually-simulated/long-consecutive-sequence.json`
+
+3. **Creating custom test streams**: You can also create your own chunked streams from arbitrary text files using the `split-sample-into-chunks.ts` script:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run split-sample-into-chunks -- --file=<input-file-path> --chunkSize=<chunk-size> --outputPath=<output-file-path>
+   ```
+
+   Example:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run split-sample-into-chunks -- --file=demo/llm-input-examples-raw-text/long-consecutive-sequence.txt --chunkSize=2 --outputPath=demo/llm-stream-examples-manually-simulated/long-consecutive-sequence.json
+   ```
 
 This will execute the parser against the selected example stream and print parsed segments to the console.
+
+## Running tests
+
+The project includes comprehensive test coverage with 187 tests across all core functionality. To run the tests:
+
+1. Start the Docker container:
+   ```bash
+   docker compose up -d
+   ```
+
+2. Run all tests:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm test:run
+   ```
+
+3. Run tests in watch mode during development:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm test
+   ```
+
+4. Run tests with coverage reporting:
+   ```bash
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm test:coverage
+   ```
+
+**Note:** 3 tests are intentionally designed to fail to prove the existence of the known bug with long consecutive character sequences. All other tests should pass.
 
 ---
 
@@ -392,9 +440,6 @@ For each markup type, we define a set of regex rules to detect both full matches
 
 ## Future Plans and Directions
 
-This project is an **open-ended** research on how to parse LLM-produced streams in the most robust and efficient way.
-
-
 ### Exploration of Alternative Parsing Architectures
 
 While our current regex-based approach provides good results for LLM-generated Markdown streams, we recognize that established parsing libraries may offer additional benefits for long-term scalability and maintenance. We're evaluating:
@@ -430,7 +475,6 @@ Please feel free to share your thoughts in **[discussions](https://github.com/Li
 
 
 - **Roadmap:**
-  - Tests...
   - Support for the missing markdown features listed earlier.
   - Performance optimizations
   - Build an AST (abstract syntax tree) model to represent the parsed stream in memory

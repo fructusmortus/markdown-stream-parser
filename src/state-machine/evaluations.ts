@@ -35,49 +35,49 @@ const EVALUATIONS: Record<string, Function> = {
         context: Context,
         event: EvaluationEvent,
         params: EvaluationParams
-    ) => REGEX.headerMarker.test(event.segment ?? ''),    // Checks if string contains only consequent `#` followed by optional empty space ` `
+    ) => REGEX.headerMarker!.test(event.segment ?? ''),    // Checks if string contains only consequent `#` followed by optional empty space ` `
 
     'is::inlineStyleMarkerPartialOrFull': (
         context: Context,
         event: EvaluationEvent,
         params: EvaluationParams
-    ) => params.styleGroup ? INLINE_STYLE_GROUPS[params.styleGroup].regex.partialOrFull.test(event.segment ?? '') : false,
+    ) => params.styleGroup ? INLINE_STYLE_GROUPS[params.styleGroup]!.regex.partialOrFull.test(event.segment ?? '') : false,
 
     'is::inlineStyleMarkerFull': (
         context: Context,
         event: EvaluationEvent,
         params: EvaluationParams
-    ) => params.styleGroup ? INLINE_STYLE_GROUPS[params.styleGroup].regex.full.test(event.segment ?? '') : false,
+    ) => params.styleGroup ? INLINE_STYLE_GROUPS[params.styleGroup]!.regex.full.test(event.segment ?? '') : false,
 
     'is::inlineStyleMarkerPartialStart': (
         context: Context,
         event: EvaluationEvent,
         params: EvaluationParams
-    ) => params.styleGroup ? INLINE_STYLE_GROUPS[params.styleGroup].regex.partialStart.test(event.segment ?? '') : false,
+    ) => params.styleGroup ? INLINE_STYLE_GROUPS[params.styleGroup]!.regex.partialStart.test(event.segment ?? '') : false,
 
     'is::inlineStyleMarkerPartialEnd': (
         context: Context,
         event: EvaluationEvent,
         params: EvaluationParams
-    ) => params.styleGroup ? INLINE_STYLE_GROUPS[params.styleGroup].regex.partialEnd.test(event.segment ?? '') : false,
+    ) => params.styleGroup ? INLINE_STYLE_GROUPS[params.styleGroup]!.regex.partialEnd.test(event.segment ?? '') : false,
 
     'is::codeBlockStartMarker': (
         context: Context,
         event: EvaluationEvent,
         params: EvaluationParams
-    ) => REGEX.codeBlockStartMarker.test(event.segment ?? ''),
+    ) => REGEX.codeBlockStartMarker!.test(event.segment ?? ''),
 
     'is::codeBlockEndMarker': (
         context: Context,
         event: EvaluationEvent,
         params: EvaluationParams
-    ) => REGEX.codeBlockEndMarker.test(event.segment ?? ''),
+    ) => REGEX.codeBlockEndMarker!.test(event.segment ?? ''),
 
     'has::newLine': (
         context: Context,
         event: EvaluationEvent,
         params: EvaluationParams
-    ) => REGEX.hasNewLineSymbol.test(event.segment ?? ''),
+    ) => REGEX.hasNewLineSymbol!.test(event.segment ?? ''),
 
     'has::prefixedContent': (
         context: Context,
@@ -95,13 +95,13 @@ const EVALUATIONS: Record<string, Function> = {
         context: Context,
         event: EvaluationEvent,
         params: EvaluationParams
-    ) => REGEX.endsWithNewLine.test(event.segment ?? ''),
+    ) => REGEX.endsWithNewLine!.test(event.segment ?? ''),
 
     'ends::moreThanOneNewLine': (
         context: Context,
         event: EvaluationEvent,
         params: EvaluationParams
-    ) => REGEX.endsWithMoreThanOneNewLine.test(event.segment ?? ''),
+    ) => REGEX.endsWithMoreThanOneNewLine!.test(event.segment ?? ''),
 }
 
 export const evaluationRunner = (
@@ -114,5 +114,5 @@ export const evaluationRunner = (
         throw new Error(`No evaluation found for: ${evaluationName}`);
     }
 
-    return EVALUATIONS[evaluationName](context, event, params);
+    return EVALUATIONS[evaluationName]!(context, event, params);
 }
