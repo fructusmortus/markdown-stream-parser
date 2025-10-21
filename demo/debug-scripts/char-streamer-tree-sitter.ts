@@ -1,14 +1,15 @@
 import fs from 'fs'
 import Parser from 'tree-sitter'
 import Markdown from '@tree-sitter-grammars/tree-sitter-markdown';
-import { MarkdownStreamParser } from '../../src/tree-sitter-markdown-stream-parser.ts'
+import { MarkdownStreamParser, type StreamingChunk } from '../../src/tree-sitter-markdown-stream-parser.ts'
 
 import { log, info, infoStr, warn, err } from './debug-tools.ts'
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
 let DELAY = 0;
-let fileName = '';
+let filePath = '';
+let CHUNK_LIMIT: number | null = null;
 
 for (const arg of args) {
     if (arg.startsWith('--interval=')) {
@@ -16,227 +17,114 @@ for (const arg of args) {
         if (!isNaN(val)) DELAY = val;
     }
     if (arg.startsWith('--file=')) {
-        fileName = arg.split('=')[1];
+        filePath = arg.split('=')[1];
+    }
+    if (arg.startsWith('--limit=')) {
+        const val = parseInt(arg.split('=')[1], 10);
+        if (!isNaN(val)) CHUNK_LIMIT = val;
     }
 }
 
-if (!fileName) {
+if (!filePath) {
     throw new Error('Missing required argument: --file=<path-to-file>');
 }
 
-// const sourceFile = `/usr/src/service/demo/llm-streams-examples/${fileName}`;
-const markdownLines = [
-    "####",
-    " 🐾",
-    " **",
-    "Regex",
-    " Lesson",
-    ":",
-    " Evalu",
-    "ating",
-    " Cat",
-    " Bre",
-    "eds",
-    "**\n\n",
-    "Regex",
-    ",",
-    " or",
-    " **",
-    "regular",
-    " expressions",
-    "**,",
-    " are",
-    " a",
-    " powerful",
-    " textual",
-    " tool",
-    " often",
-    " used",
-    " in",
-    " programming",
-    " for",
-    " finding",
-    "```",
-    "python",
-    "\n",
-    "import",
-    " re",
-    "\n\n",
-    "#",
-    " List",
-    " of",
-    " cat",
-    " breeds",
-    "\n",
-    "cat",
-    "_b",
-    "re",
-    "eds",
-    " =",
-    " ['",
-    "S",
-    "iam",
-    "ese",
-    "',",
-    " '",
-    "Pers",
-    "ian",
-    "',",
-    " '",
-    "M",
-    "aine",
-    " C",
-    "oon",
-    "',",
-    " '",
-    "B",
-    "eng",
-    "al",
-    "',",
-    " '",
-    "S",
-    "ph",
-    "yn",
-    "x",
-    "']\n\n",
-    "#",
-    " Join",
-    " breeds",
-    " into",
-    " a",
-    " regex",
-    " pattern",
-    "\n",
-    "pattern",
-    " =",
-    " r",
-    "'\\",
-    "b",
-    "(?:",
-    "'",
-    " +",
-    " '|",
-    "'.",
-    "join",
-    "(map",
-    "(re",
-    ".escape",
-    ",",
-    " cat",
-    "_b",
-    "re",
-    "eds",
-    "))",
-    " +",
-    " r",
-    "')",
-    "\\",
-    "b",
-    "'\n\n",
-    "#",
-    " Sample",
-    " sentences",
-    "\n",
-    "text",
-    " =",
-    " \"",
-    "I",
-    " have",
-    " a",
-    " Bengal",
-    " and",
-    " a",
-    " Maine",
-    " C",
-    "oon",
-    ",",
-    " but",
-    " my",
-    " friend",
-    " prefers",
-    " S",
-    "ph",
-    "yn",
-    "x",
-    " cats",
-    ".\"\n\n",
-    "#",
-    " Search",
-    " for",
-    " matches",
-    "\n",
-    "matches",
-    " =",
-    " re",
-    ".findall",
-    "(pattern",
-    ",",
-    " text",
-    ",",
-    " flags",
-    "=re",
-    ".",
-    "IGNORE",
-    "CASE",
-    ")\n\n",
-    "print",
-    "(\"",
-    "Cat",
-    " breeds",
-    " found",
-    ":\",",
-    " matches",
-    ")\n",
-    "``",
-    "`\n\n",
-    "---\n\n",
-]
+const sourceFile = `/usr/src/service/demo/llm-streams-examples/${filePath}`;
 
-// Initialize tree-sitter parser
-// const parser = new Parser();
-// parser.setLanguage(Markdown);
+// Get parser instance with unique ID
+const markdownStreamParser = MarkdownStreamParser.getInstance(filePath);
 
-// const treeSitter = parser.parse(sourceFile);
+type JSONChunk = string | object;
 
-const streamParser = new MarkdownStreamParser();
-
-let accumulatedElements = [];
-
-markdownLines.forEach((chunk, index) => {
-    console.log(`\n=== Processing chunk ${index}: "${chunk.replace(/\n/g, '\\n')}" ===`);
+async function* streamJSONinChunks(
+    jsonArray: JSONChunk[], 
+    limit?: number | null
+): AsyncGenerator<JSONChunk, void, unknown> {
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
     
-    streamParser.processLine(chunk);
+    const itemsToProcess = limit ? jsonArray.slice(0, limit) : jsonArray;
     
-    const currentElements = streamParser.getCompletedElements();
-    
-    // Show only newly completed elements
-    const newElements = currentElements.filter(elem => 
-        !accumulatedElements.some(acc => 
-            acc.type === elem.type && acc.text === elem.text
-        )
-    );
-    
-    if (newElements.length > 0) {
-        console.log('Newly completed elements:');
-        newElements.forEach(elem => {
-            const preview = elem.text.replace(/\n/g, '\\n').substring(0, 60);
-            console.log(`  - ${elem.type}${elem.level ? ` (h${elem.level})` : ''}: "${preview}${elem.text.length > 60 ? '...' : ''}"`);
+    for (const item of itemsToProcess) {
+        if (item !== '') {
+            yield item;
+            await delay(DELAY);
+        }
+    }
+}
+
+(async () => {
+    console.log('\n');
+    console.log(`Loading file: ${sourceFile}`);
+    console.log(`Delay between chunks: ${DELAY}ms`);
+    if (CHUNK_LIMIT) {
+        console.log(`Chunk limit: ${CHUNK_LIMIT}`);
+    }
+    console.log('\n');
+
+    try {
+        const jsonContent: string = fs.readFileSync(sourceFile, { encoding: 'utf-8' });
+        const parsedJson: JSONChunk[] = JSON.parse(jsonContent);
+        
+        console.log(`Total chunks in file: ${parsedJson.length}`);
+        console.log('Starting parser...\n');
+        
+        let chunkCounter = 0;
+        
+        // Subscribe to parsed segments
+        const unsubscribe = markdownStreamParser.subscribeToTokenParse((chunk: StreamingChunk) => {
+            if (chunk.status === 'START_STREAM') {
+                console.log('=== Stream Started ===\n');
+            } else if (chunk.status === 'END_STREAM') {
+                console.log('\n=== Stream Ended ===');
+            } else if (chunk.status === 'STREAMING' && chunk.segment) {
+                console.log(`Segment:`, JSON.stringify(chunk, null, 2));
+            }
         });
-        accumulatedElements = currentElements;
-    } else {
-        console.log('No newly completed elements yet');
+        
+        // Start the parser
+        markdownStreamParser.startParsing();
+        
+        // Process chunks using async generator
+        for await (const chunk of streamJSONinChunks(parsedJson, CHUNK_LIMIT)) {
+            chunkCounter++;
+            
+            const chunkStr = typeof chunk === 'string' ? chunk : JSON.stringify(chunk);
+            console.log(`\nProcessing chunk ${chunkCounter}: "${chunkStr}"`);
+            
+            // Send chunk to parser
+            const error = markdownStreamParser.parseToken(chunkStr);
+            if (error) {
+                console.error('Error parsing token:', error.message);
+                break;
+            }
+        }
+        
+        // Stop the parser
+        markdownStreamParser.stopParsing();
+        
+        // Display final summary
+        console.log(`\nTotal chunks processed: ${chunkCounter}`);
+        
+        const summary = markdownStreamParser.getSegmentsSummary();
+        console.log('\nSegments by type:', summary.byType);
+        console.log('Total segments generated:', summary.total);
+        console.log('Final content length:', markdownStreamParser.getCurrentContent().length, 'characters');
+        
+        // Cleanup
+        unsubscribe();
+        MarkdownStreamParser.removeInstance(filePath);
+        
+    } catch (error) {
+        console.error('Error processing file:', error);
+        process.exit(1);
     }
-    
-    // Debug tree for specific chunks
-    if (chunk.includes('\n\n')) {
-        streamParser.debugTree();
-    }
-});
+})();
 
-console.log('\n=== Final completed elements ===');
-accumulatedElements.forEach(elem => {
-    console.log(`- ${elem.type}${elem.level ? ` (h${elem.level})` : ''}: "${elem.text.substring(0, 50)}${elem.text.length > 50 ? '...' : ''}"`);
-});
+
+// console.log('\n=== Final completed elements ===');
+// accumulatedElements.forEach(elem => {
+//     console.log(`- ${elem.type}${elem.level ? ` (h${elem.level})` : ''}: "${elem.text.substring(0, 50)}${elem.text.length > 50 ? '...' : ''}"`);
+// });
 
 
 // console.log("\n\n\n TREE", treeSitter);

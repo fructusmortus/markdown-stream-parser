@@ -1,5 +1,6 @@
-import { Parser, Language } from 'web-tree-sitter';
-import TokensStreamBuffer from './tokens-stream-buffer.ts';
+import TokensStreamBuffer from './tokens-stream-buffer.ts'
+import Parser from 'tree-sitter';
+import Markdown from '@tree-sitter-grammars/tree-sitter-markdown';
 
 interface StreamingSegment {
     level?: number;
@@ -12,7 +13,7 @@ interface StreamingSegment {
 
 export interface StreamingChunk {
     status: string;
-    segment?: StreamingSegment;
+    segment: StreamingSegment;
 }
 
 interface BlockState {
@@ -23,14 +24,11 @@ interface BlockState {
     styles: Set<string>;
 }
 
+
 export class MarkdownStreamParser {
     private static instances = new Map<string, MarkdownStreamParser>();
-    private static parserInitialized = false;
-    private static parserInitPromise: Promise<void> | null = null;
-    private static markdownLanguage: Parser.Language | null = null;
-    private static wasmPath: string | null = null;
     
-    private parser: Parser | null = null;
+    private parser: Parser;
     private currentTree: Parser.Tree | null = null;
     private content: string = '';
     private lastProcessedIndex: number = 0;
@@ -42,89 +40,14 @@ export class MarkdownStreamParser {
     private parsing: boolean = false;
     private tokenParseListeners: Array<(chunk: StreamingChunk) => void> = [];
     private unsubscribeFromProcessor: (() => void) | null = null;
-
-    /**
-     * Configure the WASM file path before creating any instances
-     * This must be called before getInstance() if you want to use a custom path
-     */
-    static configureWasmPath(path: string): void {
-        if (MarkdownStreamParser.parserInitialized) {
-            console.warn('WASM path configuration ignored - parser already initialized');
-            return;
-        }
-        MarkdownStreamParser.wasmPath = path;
-    }
     
-    static async getInstance(instanceId: string): Promise<MarkdownStreamParser> {
-        // Initialize parser and language once for all instances
-        if (!MarkdownStreamParser.parserInitialized) {
-            if (!MarkdownStreamParser.parserInitPromise) {
-                MarkdownStreamParser.parserInitPromise = MarkdownStreamParser.initializeParser();
-            }
-            await MarkdownStreamParser.parserInitPromise;
-        }
-        
+    static getInstance(instanceId: string): MarkdownStreamParser {
         if (!MarkdownStreamParser.instances.has(instanceId)) {
-            const instance = new MarkdownStreamParser();
-            await instance.initialize();
-            MarkdownStreamParser.instances.set(instanceId, instance);
+            MarkdownStreamParser.instances.set(instanceId, new MarkdownStreamParser());
         }
         
         console.info(`\x1b[34mMarkdownStreamParser ->\x1b[0m getInstance::instanceId: ${instanceId}`);
         return MarkdownStreamParser.instances.get(instanceId)!;
-    }
-    
-    private static async initializeParser(): Promise<void> {
-        try {
-            // Initialize the Parser library itself
-            await Parser.init({
-                locateFile(scriptName: string, scriptDirectory: string) {
-                    if (typeof window !== 'undefined') {
-                        return window.location.origin + '/' + scriptName;
-                    }
-                    return '/' + scriptName;
-                }
-            });
-            
-            // Determine the correct path based on environment
-            let wasmPath = MarkdownStreamParser.wasmPath;
-            
-            if (!wasmPath) {
-                // Default path for browser/Vite environment
-                if (typeof window !== 'undefined') {
-                    wasmPath = '/tree-sitter-markdown.wasm';
-                } else {
-                    // Node.js environment
-                    wasmPath = './wasm/tree-sitter-markdown.wasm';
-                }
-            }
-            
-            console.info(`Loading markdown WASM from: ${wasmPath}`);
-            
-            // Load the language using the imported Language class
-            MarkdownStreamParser.markdownLanguage = await Language.load(wasmPath);
-            
-            MarkdownStreamParser.parserInitialized = true;
-            console.info('✅ Tree-sitter markdown language loaded successfully');
-        } catch (error) {
-            console.error('Failed to load tree-sitter-markdown WASM:', error);
-            throw new Error(`Failed to initialize markdown parser: ${error}`);
-        }
-    }
-    
-    private static getWasmPath(): string {
-        // Use configured path if available
-        if (MarkdownStreamParser.wasmPath) {
-            return MarkdownStreamParser.wasmPath;
-        }
-        
-        // For Vite/browser environment, use relative path from public directory
-        if (typeof window !== 'undefined') {
-            return '/tree-sitter-markdown.wasm';
-        }
-        
-        // Node.js fallback
-        return './wasm/tree-sitter-markdown.wasm';
     }
     
     static removeInstance(instanceId: string): void {
@@ -136,28 +59,15 @@ export class MarkdownStreamParser {
     }
     
     constructor() {
+        this.parser = new Parser();
+        this.parser.setLanguage(Markdown);
         this.tokensStreamProcessor = new TokensStreamBuffer();
     }
     
-    private async initialize(): Promise<void> {
-        // Create a new parser instance for this instance
-        this.parser = new Parser();
-        
-        // Use the statically loaded language
-        if (!MarkdownStreamParser.markdownLanguage) {
-            throw new Error('Markdown language not loaded. This should not happen if getInstance() was used.');
-        }
-        
-        // Set the language for this parser instance
-        this.parser.setLanguage(MarkdownStreamParser.markdownLanguage);
-        
-        console.info('Parser instance initialized with markdown language');
-    }
-    
     /**
-     * Subscribe to parsed tokens/segments
-     * Returns an unsubscribe function
-     */
+    * Subscribe to parsed tokens/segments
+    * Returns an unsubscribe function
+    */
     subscribeToTokenParse(listener: (chunk: StreamingChunk, unsubscribe: () => void) => void): () => void {
         const wrappedListener = (data: StreamingChunk) => {
             listener(data, unsubscribe);
@@ -172,23 +82,19 @@ export class MarkdownStreamParser {
     }
     
     /**
-     * Notify all subscribers about a parsed token
-     */
+    * Notify all subscribers about a parsed token
+    */
     private notifyTokenParse(chunk: StreamingChunk): void {
         this.tokenParseListeners.forEach(listener => listener(chunk));
     }
     
     /**
-     * Start the parsing session
-     */
+    * Start the parsing session
+    */
     startParsing(): void {
         if (this.parsing) {
             console.warn('Parser is already running');
             return;
-        }
-        
-        if (!this.parser) {
-            throw new Error('Parser not initialized. Call getInstance() to get an initialized instance.');
         }
         
         // Reset state
@@ -213,8 +119,8 @@ export class MarkdownStreamParser {
     }
     
     /**
-     * Parse a single token/chunk
-     */
+    * Parse a single token/chunk
+    */
     parseToken(chunk: string): Error | void {
         if (!this.parsing) {
             const error = new Error('Parser is not started. Call startParsing() first.');
@@ -227,8 +133,8 @@ export class MarkdownStreamParser {
     }
     
     /**
-     * Stop parsing and cleanup
-     */
+    * Stop parsing and cleanup
+    */
     stopParsing(): void {
         if (!this.parsing) {
             return;
@@ -251,13 +157,9 @@ export class MarkdownStreamParser {
     }
     
     /**
-     * Process raw chunk through tree-sitter
-     */
+    * Process raw chunk through tree-sitter
+    */
     private processRawChunk(chunk: string): StreamingChunk[] {
-        if (!this.parser) {
-            return [];
-        }
-        
         const oldLength = this.content.length;
         
         // Add chunk to content
@@ -388,26 +290,29 @@ export class MarkdownStreamParser {
         return segments;
     }
     
-    // All other methods remain the same...
     private analyzeContentType(
         content: string, 
         position: number
     ): { type: string; level?: number } | null {
-        // Same implementation as before
+        // Get the current line being built
         const beforeContent = content.substring(0, position);
         const afterContent = content.substring(position);
         
+        // Find the start of the current line
         const lastNewline = beforeContent.lastIndexOf('\n');
         const lineStart = lastNewline === -1 ? 0 : lastNewline + 1;
         const currentLineContent = content.substring(lineStart, position + afterContent.length);
         
+        // Check for heading markers at line start
         if (lineStart === position || lastNewline === position - 1 || position === 0) {
+            // We're at the beginning of a line or document
             const headingMatch = currentLineContent.match(/^(#{1,6})(\s|$)/);
             if (headingMatch) {
                 const level = headingMatch[1].length;
                 return { type: 'header', level };
             }
         } else if (currentLineContent.match(/^(#{1,6})\s/)) {
+            // We're in the middle of a heading line
             const headingMatch = currentLineContent.match(/^(#{1,6})\s/);
             if (headingMatch) {
                 const level = headingMatch[1].length;
@@ -415,14 +320,17 @@ export class MarkdownStreamParser {
             }
         }
         
+        // Check for code block markers
         if (currentLineContent.match(/^```/)) {
             return { type: 'code_block' };
         }
         
+        // Check for list markers
         if (currentLineContent.match(/^(\*|-|\+|\d+\.)\s/)) {
             return { type: 'list_item' };
         }
         
+        // Check for blockquote markers
         if (currentLineContent.match(/^>/)) {
             return { type: 'blockquote' };
         }
@@ -451,18 +359,18 @@ export class MarkdownStreamParser {
         while (current) {
             switch (current.type) {
                 case 'atx_heading':
-                    return { 
-                        type: 'header', 
-                        level: this.getHeadingLevel(current) 
-                    };
+                return { 
+                    type: 'header', 
+                    level: this.getHeadingLevel(current) 
+                };
                 case 'paragraph':
-                    return { type: 'paragraph' };
+                return { type: 'paragraph' };
                 case 'fenced_code_block':
-                    return { type: 'code_block' };
+                return { type: 'code_block' };
                 case 'list_item':
-                    return { type: 'list_item' };
+                return { type: 'list_item' };
                 case 'blockquote':
-                    return { type: 'blockquote' };
+                return { type: 'blockquote' };
             }
             
             current = current.parent;

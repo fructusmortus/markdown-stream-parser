@@ -32,7 +32,7 @@
         "typescript": "*",
         "tsup": "^8.0.0",
         "semver": "^7.5.4",
-        "tree-sitter": "^0.21.1",
+        "web-tree-sitter": "*",
         "@tree-sitter-grammars/tree-sitter-markdown": "*"
     },
     "dependencies": {
