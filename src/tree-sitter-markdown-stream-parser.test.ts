@@ -138,6 +138,146 @@ describe('Tree-Sitter MarkdownStreamParser - Phase 1: Quick Wins', () => {
     })
   })
 
+  describe('Blockquotes', () => {
+    // TODO: Blockquote marker stripping is not yet implemented in the parser.
+    // These tests document the expected behavior for future implementation.
+    // Currently, blockquote content is returned as 'paragraph' type with markers included.
+
+    it.skip('should detect blockquote type correctly', async () => {
+      parser.parseToken('> This is a quote\n')
+      parser.stopParsing()
+
+      const blockquoteSegments = parsedSegments.filter(s => s.type === 'blockquote')
+      expect(blockquoteSegments.length).toBeGreaterThan(0)
+    })
+
+    it.skip('should strip blockquote marker from content', async () => {
+      parser.parseToken('> Quoted text\n')
+      parser.stopParsing()
+
+      const fullText = parsedSegments.map(s => s.segment).join('')
+      // Should not contain the > marker
+      expect(fullText).not.toMatch(/^>/)
+      expect(fullText).toContain('Quoted text')
+    })
+
+    it.skip('should handle multiline blockquotes', async () => {
+      parser.parseToken('> Line one\n')
+      parser.parseToken('> Line two\n')
+      parser.stopParsing()
+
+      const blockquoteSegments = parsedSegments.filter(s => s.type === 'blockquote')
+      expect(blockquoteSegments.length).toBeGreaterThan(0)
+
+      const fullText = blockquoteSegments.map(s => s.segment).join('')
+      expect(fullText).toContain('Line one')
+      expect(fullText).toContain('Line two')
+    })
+
+    it.skip('should handle nested blockquotes', async () => {
+      parser.parseToken('> Outer quote\n')
+      parser.parseToken('>> Nested quote\n')
+      parser.stopParsing()
+
+      const blockquoteSegments = parsedSegments.filter(s => s.type === 'blockquote')
+      expect(blockquoteSegments.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('List Items', () => {
+    it('should detect unordered list items', async () => {
+      parser.parseToken('- First item\n')
+      parser.parseToken('- Second item\n')
+      parser.stopParsing()
+
+      const listSegments = parsedSegments.filter(s => s.type === 'list_item')
+      expect(listSegments.length).toBeGreaterThan(0)
+    })
+
+    it('should strip list markers from content', async () => {
+      parser.parseToken('- List content\n')
+      parser.stopParsing()
+
+      const fullText = parsedSegments.map(s => s.segment).join('')
+      // Should not contain the - marker at start
+      expect(fullText).not.toMatch(/^-\s/)
+      expect(fullText).toContain('List content')
+    })
+
+    it('should detect ordered list items', async () => {
+      parser.parseToken('1. First\n')
+      parser.parseToken('2. Second\n')
+      parser.stopParsing()
+
+      const listSegments = parsedSegments.filter(s => s.type === 'list_item')
+      expect(listSegments.length).toBeGreaterThan(0)
+    })
+
+    it('should handle nested list items', async () => {
+      parser.parseToken('- Parent\n')
+      parser.parseToken('  - Child\n')
+      parser.stopParsing()
+
+      const listSegments = parsedSegments.filter(s => s.type === 'list_item')
+      expect(listSegments.length).toBeGreaterThan(0)
+    })
+
+    it('should handle asterisk list markers', async () => {
+      parser.parseToken('* Item one\n')
+      parser.parseToken('* Item two\n')
+      parser.stopParsing()
+
+      const listSegments = parsedSegments.filter(s => s.type === 'list_item')
+      expect(listSegments.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('Nested Inline Styles', () => {
+    it('should detect bold inside italic', async () => {
+      parser.parseToken('This is *italic with **bold** inside*\n')
+      parser.stopParsing()
+
+      const boldSegments = parsedSegments.filter(s => s.styles && s.styles.includes('bold'))
+      const italicSegments = parsedSegments.filter(s => s.styles && s.styles.includes('italic'))
+
+      expect(italicSegments.length).toBeGreaterThan(0)
+      expect(boldSegments.length).toBeGreaterThan(0)
+    })
+
+    it('should detect italic inside bold', async () => {
+      parser.parseToken('This is **bold with *italic* inside**\n')
+      parser.stopParsing()
+
+      const boldSegments = parsedSegments.filter(s => s.styles && s.styles.includes('bold'))
+      const italicSegments = parsedSegments.filter(s => s.styles && s.styles.includes('italic'))
+
+      expect(boldSegments.length).toBeGreaterThan(0)
+      expect(italicSegments.length).toBeGreaterThan(0)
+    })
+
+    it('should handle bold+italic combo with ***', async () => {
+      parser.parseToken('This is ***bold and italic***\n')
+      parser.stopParsing()
+
+      // The segment with "bold and italic" should have both styles
+      const comboSegments = parsedSegments.filter(s =>
+        s.styles && s.styles.includes('bold') && s.styles.includes('italic')
+      )
+      expect(comboSegments.length).toBeGreaterThan(0)
+    })
+
+    it('should strip nested markers correctly', async () => {
+      parser.parseToken('Text with **bold *and italic*** here\n')
+      parser.stopParsing()
+
+      const fullText = parsedSegments.map(s => s.segment).join('')
+      // Should not contain raw asterisks
+      expect(fullText).not.toContain('**')
+      expect(fullText).toContain('bold')
+      expect(fullText).toContain('and italic')
+    })
+  })
+
   describe('Inline Style Names', () => {
     it('should use "code" not "inline_code" for inline code', async () => {
       parser.parseToken('Run `npm install` now\n')
@@ -173,6 +313,56 @@ describe('Tree-Sitter MarkdownStreamParser - Phase 1: Quick Wins', () => {
       expect(styledSegments.length).toBeGreaterThan(0)
     })
 
+    it('should strip asterisk markers from italic text', async () => {
+      parser.parseToken('normal *italic text* normal\n')
+      parser.stopParsing()
+
+      const fullText = parsedSegments.map(s => s.segment).join('')
+      // Should contain the text without asterisk markers
+      expect(fullText).toContain('italic text')
+      expect(fullText).not.toContain('*italic text*')
+
+      // Should have italic style applied
+      const italicSegment = parsedSegments.find(s => s.segment.includes('italic text'))
+      expect(italicSegment).toBeDefined()
+      expect(italicSegment.styles).toContain('italic')
+    })
+
+    it('should strip underscore markers from italic text', async () => {
+      parser.parseToken('normal _underscore text_ normal\n')
+      parser.stopParsing()
+
+      const fullText = parsedSegments.map(s => s.segment).join('')
+      expect(fullText).toContain('underscore text')
+      expect(fullText).not.toContain('_underscore text_')
+
+      const italicSegment = parsedSegments.find(s => s.segment.includes('underscore text'))
+      expect(italicSegment).toBeDefined()
+      expect(italicSegment.styles).toContain('italic')
+    })
+
+    it('should buffer split italic markers across chunks', async () => {
+      // Simulates LLM streaming where italic markers arrive in separate chunks
+      parser.parseToken('He is known for his ')
+      parser.parseToken('*excep')
+      parser.parseToken('tional musical abilities*')
+      parser.parseToken(' and more.\n')
+      parser.stopParsing()
+
+      const fullText = parsedSegments.map(s => s.segment).join('')
+
+      // Should NOT contain asterisks in output
+      expect(fullText).not.toContain('*')
+      // Should contain the full italic phrase
+      expect(fullText).toContain('exceptional musical abilities')
+
+      // The italic portions should have italic style
+      const italicSegments = parsedSegments.filter(s =>
+        s.styles && s.styles.includes('italic') && s.segment.trim().length > 0
+      )
+      expect(italicSegments.length).toBeGreaterThan(0)
+    })
+
     it('should detect strikethrough style correctly', async () => {
       parser.parseToken('This is ~~deleted~~ text\n')
       parser.stopParsing()
@@ -183,8 +373,8 @@ describe('Tree-Sitter MarkdownStreamParser - Phase 1: Quick Wins', () => {
     })
   })
 
-  describe('Real LLM Stream Example - gpt-4.5-cat-coding.json', () => {
-    it('should parse real streaming data correctly', async () => {
+  describe('Real LLM Stream Integration', () => {
+    it('should parse gpt-4.5-cat-coding stream correctly', async () => {
       const examplePath = path.join(__dirname, '../demo/llm-streams-examples/gpt-4.5-cat-coding.json')
 
       if (!fs.existsSync(examplePath)) {
@@ -203,49 +393,146 @@ describe('Tree-Sitter MarkdownStreamParser - Phase 1: Quick Wins', () => {
 
       parser.stopParsing()
 
-      // Phase 1 validation checks
-      console.log('\n=== Phase 1 Test Results ===')
-      console.log(`Total segments parsed: ${parsedSegments.length}`)
-
-      // 1. Check for correct block type naming (camelCase)
+      // Check for correct block type naming (camelCase)
       const codeBlocks = parsedSegments.filter(s => s.type === 'codeBlock')
       const wrongCodeBlocks = parsedSegments.filter(s => s.type === 'code_block')
-      console.log(`✓ Code blocks with correct naming (codeBlock): ${codeBlocks.length}`)
-      console.log(`✗ Code blocks with wrong naming (code_block): ${wrongCodeBlocks.length}`)
       expect(wrongCodeBlocks.length).toBe(0)
 
-      // 2. Check for language extraction in code blocks
-      if (codeBlocks.length > 0) {
-        const blocksWithLanguage = codeBlocks.filter(s => s.language)
-        console.log(`✓ Code blocks with language field: ${blocksWithLanguage.length}/${codeBlocks.length}`)
-      }
-
-      // 3. Check for correct style names
+      // Check for correct style names
       const wrongStyleSegments = parsedSegments.filter(s =>
         s.styles && s.styles.includes('inline_code')
       )
-      const correctStyleSegments = parsedSegments.filter(s =>
-        s.styles && s.styles.includes('code')
-      )
-      console.log(`✓ Segments with correct style name (code): ${correctStyleSegments.length}`)
-      console.log(`✗ Segments with wrong style name (inline_code): ${wrongStyleSegments.length}`)
       expect(wrongStyleSegments.length).toBe(0)
 
-      // 4. Check headers don't include markers
+      // Check headers don't include markers
       const headers = parsedSegments.filter(s => s.type === 'header')
       const headersWithMarkers = headers.filter(s => s.segment && s.segment.match(/^#+\s/))
-      console.log(`✓ Headers parsed: ${headers.length}`)
-      console.log(`✗ Headers with markers in content: ${headersWithMarkers.length}`)
       expect(headersWithMarkers.length).toBe(0)
+    })
 
-      // 5. Check for style detection
-      const styledSegments = parsedSegments.filter(s => s.styles && s.styles.length > 0)
-      console.log(`✓ Segments with styles detected: ${styledSegments.length}`)
+    it('should render entire cat-coding stream without missing parts', async () => {
+      const chunksPath = path.join(__dirname, '../demo/llm-streams-examples/gpt-4.5-cat-coding.json')
 
-      console.log('\n=== Sample Segments ===')
-      console.log('First header:', headers[0])
-      if (codeBlocks.length > 0) console.log('First code block:', codeBlocks[0])
-      if (styledSegments.length > 0) console.log('First styled segment:', styledSegments[0])
+      if (!fs.existsSync(chunksPath)) {
+        console.warn('Example file not found, skipping test')
+        return
+      }
+
+      const chunks: string[] = JSON.parse(fs.readFileSync(chunksPath, 'utf-8'))
+
+      for (const chunk of chunks) {
+        parser.parseToken(chunk)
+      }
+      parser.stopParsing()
+
+      // Reconstruct full text
+      const fullText = parsedSegments.map(s => s.segment).join('')
+
+      // Check that key content is present
+      expect(fullText).toContain('cat_breeds')
+      expect(fullText).toContain('matched_breeds')
+      expect(fullText).toContain('find_cat_breeds')
+      expect(fullText).toContain('breed_pattern')
+      expect(fullText).toContain('Regex Pattern Explained')
+      expect(fullText).toContain('Challenge yourself next')
+
+      // Ensure nothing is stuck in buffer (should have reasonable segment count)
+      expect(parsedSegments.length).toBeGreaterThan(100)
+    })
+
+    it('should detect code block when ```regex is followed by minimal content', async () => {
+      // This is the exact chunking pattern from claude-3.5-long-regex.json
+      const chunks = [
+        "Let",
+        " me create a complex",
+        " regex pattern that",
+        "'s approximately 200 characters long",
+        ". This",
+        " pattern will be quite extensive an",
+        "d might be use",
+        "d for various matching",
+        " scenarios.\n\nHere",
+        "'s the regex pattern:\n",
+        "\n\n```regex\n^",  // This was the problematic chunk!
+        "(?:[A-Za",
+        "-z0-9",
+      ]
+
+      for (const chunk of chunks) {
+        parser.parseToken(chunk)
+      }
+      parser.stopParsing()
+
+      // Find code block segments
+      const codeBlockSegments = parsedSegments.filter(s => s.type === 'codeBlock')
+
+      // Check that we DO have code block segments
+      expect(codeBlockSegments.length).toBeGreaterThan(0)
+
+      // The triple backticks should not appear in the output
+      const allText = parsedSegments.map(s => s.segment).join('')
+      expect(allText).not.toContain('```regex')
+      expect(allText).not.toContain('```')
+
+      // The ^ and regex content should be in a codeBlock
+      const codeContent = codeBlockSegments.map(s => s.segment).join('')
+      expect(codeContent).toContain('^')
+    })
+
+    it('should parse claude-3.5-long-regex stream correctly', async () => {
+      const jsonPath = path.join(__dirname, '../demo/llm-streams-examples/claude-3.5-long-regex.json')
+
+      if (!fs.existsSync(jsonPath)) {
+        console.warn('Example file not found, skipping test')
+        return
+      }
+
+      const chunks = JSON.parse(fs.readFileSync(jsonPath, 'utf8'))
+
+      for (const chunk of chunks) {
+        parser.parseToken(chunk)
+      }
+      parser.stopParsing()
+
+      const allText = parsedSegments.map(s => s.segment).join('')
+
+      // The triple backticks should not appear in the output
+      expect(allText).not.toContain('```regex')
+      expect(allText).not.toContain('```')
+
+      // Should have code block segments with the regex language
+      const codeBlockSegments = parsedSegments.filter(s => s.type === 'codeBlock')
+      expect(codeBlockSegments.length).toBeGreaterThan(0)
+
+      // Check language detection
+      const hasRegexLanguage = codeBlockSegments.some(s => s.language === 'regex')
+      expect(hasRegexLanguage).toBe(true)
+    })
+
+    it('should parse claude-3.5-very-long-regex stream correctly', async () => {
+      const jsonPath = path.join(__dirname, '../demo/llm-streams-examples/claude-3.5-very-long-regex.json')
+
+      if (!fs.existsSync(jsonPath)) {
+        console.warn('Example file not found, skipping test')
+        return
+      }
+
+      const chunks = JSON.parse(fs.readFileSync(jsonPath, 'utf8'))
+
+      for (const chunk of chunks) {
+        parser.parseToken(chunk)
+      }
+      parser.stopParsing()
+
+      const allText = parsedSegments.map(s => s.segment).join('')
+
+      // Should not contain raw triple backticks
+      expect(allText).not.toContain('```regex')
+      expect(allText).not.toContain('```')
+
+      // Should have code block segments
+      const codeBlockSegments = parsedSegments.filter(s => s.type === 'codeBlock')
+      expect(codeBlockSegments.length).toBeGreaterThan(0)
     })
   })
 

@@ -83,5 +83,10 @@
     "base": "x-BUG-gpt-4.5-nested-code-blocks",
     "json": "/llm-streams-examples/x-BUG-gpt-4.5-nested-code-blocks.json",
     "txt": "/llm-streams-examples/x-BUG-gpt-4.5-nested-code-blocks.txt"
+  },
+  {
+    "base": "test-strikethrough",
+    "json": "/llm-streams-examples/test-strikethrough.json",
+    "txt": "/llm-streams-examples/test-strikethrough.txt"
   }
 ]

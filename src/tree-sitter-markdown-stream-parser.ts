@@ -433,6 +433,20 @@ export class MarkdownStreamParser {
                     }
                 }
             }
+
+            // Check for unmatched strikethrough markers (~~)
+            // If there's ~~ in the content but no strikethrough found at that position,
+            // it means the structure is incomplete
+            if (newPortion.includes('~~')) {
+                const hasCompleteStrikethrough = this.hasCompleteStrikethroughAt(inlineTree.rootNode, newPortionStart, newPortionEnd);
+
+                if (!hasCompleteStrikethrough) {
+                    // Buffer this content - we have an unmatched ~~
+                    this.pendingInlineContent = newContent;
+                    this.pendingInlineStartIndex = actualFromIndex;
+                    return segments; // Don't emit anything yet
+                }
+            }
         }
 
         // Skip empty content
@@ -545,6 +559,176 @@ export class MarkdownStreamParser {
                 return segments; // Return empty array
             }
 
+            // Handle code fence detection in paragraph content
+            // This happens when tree-sitter's incremental parsing hasn't recognized content as fenced_code_block yet
+            // Check if new content contains a code fence opening ANYWHERE (not just at start)
+            const codeFenceOpeningMatch = newContent.match(/```([a-zA-Z0-9]*)\n?/);
+            if (codeFenceOpeningMatch) {
+                const fenceStart = newContent.indexOf(codeFenceOpeningMatch[0]);
+                const fenceLanguage = codeFenceOpeningMatch[1] || '';
+                const fenceMarker = codeFenceOpeningMatch[0];
+
+                // Check the full document content from the fence position for closing fence
+                const positionOfFence = actualFromIndex + fenceStart;
+                const contentFromFence = this.content.substring(positionOfFence);
+                const closingFenceIdx = contentFromFence.substring(fenceMarker.length).indexOf('```');
+
+                // Content BEFORE the fence should be emitted as paragraph
+                const contentBeforeFence = newContent.substring(0, fenceStart);
+
+                if (closingFenceIdx === -1) {
+                    // No closing fence yet - emit content before fence (if any) and buffer the rest
+                    if (contentBeforeFence.trim().length > 0) {
+                        segments.push({
+                            status: "STREAMING",
+                            segment: {
+                                segment: contentBeforeFence,
+                                styles: [],
+                                type: 'paragraph',
+                                isBlockDefining: false,
+                                isProcessingNewLine: contentBeforeFence.includes('\n')
+                            }
+                        });
+                    }
+
+                    // Buffer the fence and content after it
+                    const contentFromFenceStart = newContent.substring(fenceStart);
+                    console.log(`[DEBUG] Buffering incomplete code block (no close): "${contentFromFenceStart.substring(0, 50)}..."`);
+                    this.pendingInlineContent = contentFromFenceStart;
+                    this.pendingInlineStartIndex = positionOfFence;
+                    return segments;
+                } else {
+                    // We have a complete code block structure
+                    // Emit content before fence as paragraph
+                    if (contentBeforeFence.trim().length > 0) {
+                        segments.push({
+                            status: "STREAMING",
+                            segment: {
+                                segment: contentBeforeFence,
+                                styles: [],
+                                type: 'paragraph',
+                                isBlockDefining: false,
+                                isProcessingNewLine: contentBeforeFence.includes('\n')
+                            }
+                        });
+                    }
+
+                    // Process content after opening fence
+                    const contentAfterOpeningFence = newContent.substring(fenceStart + fenceMarker.length);
+                    const closingFenceInContent = contentAfterOpeningFence.indexOf('```');
+
+                    let codeContent: string;
+                    if (closingFenceInContent === -1) {
+                        // Just the opening fence and content, no closing in this chunk
+                        codeContent = contentAfterOpeningFence;
+                    } else {
+                        // Both opening and closing fence in this chunk
+                        codeContent = contentAfterOpeningFence.substring(0, closingFenceInContent);
+                    }
+
+                    // Strip leading newlines that are part of the fence structure
+                    codeContent = codeContent.replace(/^\n/, '');
+
+                    // Emit as code block
+                    if (codeContent.length > 0) {
+                        console.log(`[DEBUG] Detected code fence in paragraph, reclassifying: "${codeContent.substring(0, 30)}..."`);
+
+                        segments.push({
+                            status: "STREAMING",
+                            segment: {
+                                segment: codeContent,
+                                styles: [],
+                                type: 'codeBlock',
+                                isBlockDefining: true,
+                                isProcessingNewLine: codeContent.includes('\n'),
+                                language: fenceLanguage
+                            }
+                        });
+                    }
+
+                    // Handle content after closing fence (if present)
+                    if (closingFenceInContent !== -1) {
+                        const afterClosingFence = contentAfterOpeningFence.substring(closingFenceInContent + 3);
+                        const textAfterFence = afterClosingFence.replace(/^\n/, '');
+                        if (textAfterFence.trim().length > 0) {
+                            segments.push({
+                                status: "STREAMING",
+                                segment: {
+                                    segment: textAfterFence,
+                                    styles: [],
+                                    type: 'paragraph',
+                                    isBlockDefining: true,
+                                    isProcessingNewLine: textAfterFence.includes('\n')
+                                }
+                            });
+                        }
+                    }
+
+                    return segments;
+                }
+            }
+
+            // Also check for content in the MIDDLE of a code block
+            // This happens when previous chunks contained the opening fence
+            // Check if we're currently inside an unclosed code block
+            const contentBeforeThis = this.content.substring(0, actualFromIndex);
+            const allFences = contentBeforeThis.match(/```/g) || [];
+            const isInsideCodeBlock = allFences.length % 2 === 1;
+
+            if (isInsideCodeBlock) {
+                // We're inside a code block - check if this content contains closing fence
+                const closingFenceIdx = newContent.indexOf('```');
+
+                if (closingFenceIdx === -1) {
+                    // No closing fence - emit as code block content
+                    console.log(`[DEBUG] Content inside code block: "${newContent.substring(0, 30)}..."`);
+                    return [{
+                        status: "STREAMING",
+                        segment: {
+                            segment: newContent,
+                            styles: [],
+                            type: 'codeBlock',
+                            isBlockDefining: false,
+                            isProcessingNewLine: newContent.includes('\n')
+                        }
+                    }];
+                } else {
+                    // Has closing fence - emit content before fence as code block
+                    const codeContent = newContent.substring(0, closingFenceIdx);
+                    const afterFence = newContent.substring(closingFenceIdx + 3);
+
+                    if (codeContent.length > 0) {
+                        const codeSegment = {
+                            status: "STREAMING" as const,
+                            segment: {
+                                segment: codeContent,
+                                styles: [] as string[],
+                                type: 'codeBlock',
+                                isBlockDefining: false,
+                                isProcessingNewLine: codeContent.includes('\n')
+                            }
+                        };
+                        segments.push(codeSegment);
+                    }
+
+                    // Handle content after closing fence as paragraph
+                    const textAfterFence = afterFence.replace(/^\n/, ''); // Strip leading newline
+                    if (textAfterFence.length > 0) {
+                        segments.push({
+                            status: "STREAMING",
+                            segment: {
+                                segment: textAfterFence,
+                                styles: [],
+                                type: 'paragraph',
+                                isBlockDefining: true,
+                                isProcessingNewLine: textAfterFence.includes('\n')
+                            }
+                        });
+                    }
+
+                    return segments;
+                }
+            }
 
         }
 
@@ -628,6 +812,43 @@ export class MarkdownStreamParser {
             } else if (styles.indexOf('italic') !== -1) {
                 // Strip italic asterisks/underscores and potentially split into multiple segments
                 const splitSegments = this.getItalicSegments(processedContent, nodeAtPosition, actualFromIndex, actualToIndex, styles, blockInfo);
+
+                if (splitSegments.length > 0) {
+                    // Determine if this block is defining based on whether we've emitted content for it yet
+                    let effectiveIsBlockDefining = isNewBlock;
+                    if (!isNewBlock && this.currentBlock && !this.currentBlock.hasEmittedContent && this.currentBlock.type === blockInfo.type) {
+                        effectiveIsBlockDefining = true;
+                    }
+
+                    // If we have segments, push them and update state
+                    // Need to apply block defining flag to the FIRST segment
+                    splitSegments.forEach((seg, index) => {
+                        if (index === 0) seg.segment!.isBlockDefining = effectiveIsBlockDefining;
+                        segments.push(seg);
+                    });
+
+                    // Update block tracking with the last segment's end (which corresponds to actualToIndex)
+                    if (isNewBlock) {
+                        this.currentBlock = {
+                            type: blockInfo.type,
+                            level: blockInfo.level,
+                            language: blockInfo.language,
+                            startIndex: nodeAtPosition.startIndex,
+                            lastSegmentEnd: actualToIndex,
+                            styles: new Set(styles),
+                            hasEmittedContent: true
+                        };
+                    } else if (this.currentBlock) {
+                        this.currentBlock.lastSegmentEnd = actualToIndex;
+                        this.currentBlock.hasEmittedContent = true;
+                        styles.forEach(s => this.currentBlock!.styles.add(s));
+                    }
+
+                    return segments;
+                }
+            } else if (styles.indexOf('strikethrough') !== -1) {
+                // Strip strikethrough markers and potentially split into multiple segments
+                const splitSegments = this.getStrikethroughSegments(processedContent, nodeAtPosition, actualFromIndex, actualToIndex, styles, blockInfo);
 
                 if (splitSegments.length > 0) {
                     // Determine if this block is defining based on whether we've emitted content for it yet
@@ -865,6 +1086,24 @@ export class MarkdownStreamParser {
                 return true;
             }
             // Also check partial overlap - if our content is inside an emphasis
+            if (span.startIndex < endPos && span.endIndex > startPos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if there's a complete strikethrough that overlaps with the given range
+     */
+    private hasCompleteStrikethroughAt(inlineRoot: Parser.SyntaxNode, startPos: number, endPos: number): boolean {
+        const strikethroughNodes = inlineRoot.descendantsOfType('strikethrough');
+        for (const span of strikethroughNodes) {
+            // Check if this strikethrough overlaps with our range
+            if (span.startIndex <= startPos && span.endIndex >= endPos) {
+                return true;
+            }
+            // Also check partial overlap - if our content is inside a strikethrough
             if (span.startIndex < endPos && span.endIndex > startPos) {
                 return true;
             }
@@ -1674,6 +1913,171 @@ export class MarkdownStreamParser {
 
         // Fallback
         const processed = content.replace(/^[*_]/, '').replace(/[*_]$/, '');
+        if (!processed) return [];
+
+        return [{
+            status: "STREAMING",
+            segment: {
+                segment: processed,
+                styles: baseStyles,
+                type: blockInfo.type,
+                isBlockDefining: false,
+                isProcessingNewLine: processed.includes('\n'),
+                ...(blockInfo.level !== undefined && { level: blockInfo.level }),
+                ...(blockInfo.language !== undefined && { language: blockInfo.language }),
+                ...(blockInfo.id !== undefined && { blockId: blockInfo.id })
+            }
+        }];
+    }
+
+    private getStrikethroughSegments(content: string, node: Parser.SyntaxNode, startByte: number, endByte: number, baseStyles: string[], blockInfo: any): StreamingChunk[] {
+        console.log(`[GETSTRIKETHROUGH] content="${content}", startByte=${startByte}, endByte=${endByte}`);
+
+        const segments: StreamingChunk[] = [];
+
+        // Find the inline node that contains this position from the main tree
+        if (!this.currentTree) {
+            // Fallback: strip ~~ and return single segment
+            const styles = [...baseStyles];
+            if (styles.indexOf('strikethrough') === -1) styles.push('strikethrough');
+
+            // Strip surrounding ~~
+            const processed = content.replace(/^~~/, '').replace(/~~$/, '');
+            if (!processed) return [];
+
+            return [{
+                status: "STREAMING",
+                segment: {
+                    segment: processed,
+                    styles: styles,
+                    type: blockInfo.type,
+                    isBlockDefining: false,
+                    isProcessingNewLine: processed.includes('\n'),
+                    ...(blockInfo.level !== undefined && { level: blockInfo.level }),
+                    ...(blockInfo.language !== undefined && { language: blockInfo.language }),
+                    ...(blockInfo.id !== undefined && { blockId: blockInfo.id })
+                }
+            }];
+        }
+
+        const inlineNode = this.findInlineNodeAtPosition(this.currentTree.rootNode, startByte);
+
+        // Check for both 'inline' and 'pipe_table_cell'
+        if (inlineNode && (inlineNode.type === 'inline' || inlineNode.type === 'pipe_table_cell') && this.inlineParser) {
+            const inlineContent = inlineNode.text;
+            const inlineTree = this.inlineParser.parse(inlineContent);
+
+            const relativeStart = startByte - inlineNode.startIndex;
+            const relativeEnd = endByte - inlineNode.startIndex;
+
+            const strikethroughNodes = inlineTree.rootNode.descendantsOfType('strikethrough');
+
+            // Check if any strikethrough actually overlaps with our range
+            // Use only the outermost strikethrough node (first match that overlaps)
+            for (const strikethroughNode of strikethroughNodes) {
+                // Check overlap
+                if (strikethroughNode.startIndex < relativeEnd && strikethroughNode.endIndex > relativeStart) {
+                    // Get ALL emphasis_delimiter descendants (including nested ones) sorted by position
+                    const delimiters = strikethroughNode.descendantsOfType('emphasis_delimiter')
+                        .sort((a: Parser.SyntaxNode, b: Parser.SyntaxNode) => a.startIndex - b.startIndex);
+
+                    console.log(`[GETSTRIKETHROUGH] strikethroughNode: ${strikethroughNode.startIndex}-${strikethroughNode.endIndex}, delimiters: ${delimiters.length}`);
+                    delimiters.forEach((d: Parser.SyntaxNode, i: number) => {
+                        console.log(`[GETSTRIKETHROUGH]   delimiter ${i}: ${d.startIndex}-${d.endIndex} "${d.text}"`);
+                    });
+
+                    // For strikethrough (~~), we need at least 4 delimiters (2 pairs of ~)
+                    if (delimiters.length >= 4) {
+                        // First two delimiters are the opening ~~, last two are closing ~~
+                        const openingEnd = delimiters[1].endIndex;
+                        const closingStart = delimiters[delimiters.length - 2].startIndex;
+
+                        console.log(`[GETSTRIKETHROUGH] openingEnd=${openingEnd}, closingStart=${closingStart}`);
+
+                        // 1. Prefix (Text before strikethrough span)
+                        if (strikethroughNode.startIndex > relativeStart) {
+                            const intersectionStart = Math.max(0, relativeStart);
+                            const intersectionEnd = Math.min(strikethroughNode.startIndex, relativeEnd);
+
+                            if (intersectionStart < intersectionEnd) {
+                                const prefixText = inlineContent.substring(intersectionStart, intersectionEnd);
+                                if (prefixText) {
+                                    segments.push({
+                                        status: "STREAMING",
+                                        segment: {
+                                            segment: prefixText,
+                                            styles: baseStyles.filter(s => s !== 'strikethrough'),
+                                            type: blockInfo.type,
+                                            isBlockDefining: false,
+                                            isProcessingNewLine: prefixText.includes('\n'),
+                                            ...(blockInfo.level !== undefined && { level: blockInfo.level }),
+                                            ...(blockInfo.language !== undefined && { language: blockInfo.language }),
+                                            ...(blockInfo.id !== undefined && { blockId: blockInfo.id })
+                                        }
+                                    });
+                                }
+                            }
+                        }
+
+                        // 2. Strikethrough Content (without markers)
+                        const strikethroughOverlapStart = Math.max(openingEnd, relativeStart);
+                        const strikethroughOverlapEnd = Math.min(closingStart, relativeEnd);
+
+                        if (strikethroughOverlapStart < strikethroughOverlapEnd) {
+                            const strikethroughText = inlineContent.substring(strikethroughOverlapStart, strikethroughOverlapEnd);
+                            if (strikethroughText) {
+                                const strikethroughStyles = [...baseStyles];
+                                if (strikethroughStyles.indexOf('strikethrough') === -1) strikethroughStyles.push('strikethrough');
+
+                                segments.push({
+                                    status: "STREAMING",
+                                    segment: {
+                                        segment: strikethroughText,
+                                        styles: strikethroughStyles,
+                                        type: blockInfo.type,
+                                        isBlockDefining: false,
+                                        isProcessingNewLine: strikethroughText.includes('\n'),
+                                        ...(blockInfo.level !== undefined && { level: blockInfo.level }),
+                                        ...(blockInfo.language !== undefined && { language: blockInfo.language }),
+                                        ...(blockInfo.id !== undefined && { blockId: blockInfo.id })
+                                    }
+                                });
+                            }
+                        }
+
+                        // 3. Suffix (Text after strikethrough span)
+                        if (strikethroughNode.endIndex < relativeEnd) {
+                            const suffixStart = Math.max(strikethroughNode.endIndex, relativeStart);
+                            const suffixEnd = relativeEnd;
+
+                            if (suffixStart < suffixEnd) {
+                                const suffixText = inlineContent.substring(suffixStart, suffixEnd);
+                                if (suffixText) {
+                                    segments.push({
+                                        status: "STREAMING",
+                                        segment: {
+                                            segment: suffixText,
+                                            styles: baseStyles.filter(s => s !== 'strikethrough'),
+                                            type: blockInfo.type,
+                                            isBlockDefining: false,
+                                            isProcessingNewLine: suffixText.includes('\n'),
+                                            ...(blockInfo.level !== undefined && { level: blockInfo.level }),
+                                            ...(blockInfo.language !== undefined && { language: blockInfo.language }),
+                                            ...(blockInfo.id !== undefined && { blockId: blockInfo.id })
+                                        }
+                                    });
+                                }
+                            }
+                        }
+
+                        return segments;
+                    }
+                }
+            }
+        }
+
+        // Fallback
+        const processed = content.replace(/^~~/, '').replace(/~~$/, '');
         if (!processed) return [];
 
         return [{
