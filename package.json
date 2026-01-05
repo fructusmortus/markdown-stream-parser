@@ -25,7 +25,7 @@
     "scripts": {
         "build": "tsup src/markdown-stream-parser.ts --dts --format esm,cjs --minify --out-dir build --no-sourcemap",
         "debug-parser": "node ./demo/debug-scripts/char-streamer-tree-sitter.ts",
-        "debug-parser": "node ./demo/debug-scripts/char-streamer.ts",
+        "debug-parser-state-machine": "node ./demo/debug-scripts/char-streamer.ts",
         "split-sample-into-chunks": "node ./demo/debug-scripts/split-sample-into-chunks.ts",
         "test": "vitest",
         "test:run": "vitest run",
