@@ -1,6 +1,116 @@
 import type { Parser } from 'web-tree-sitter'
 import { findActiveNodeAtPosition, findInlineNodeAtPosition } from './tree-navigation.js'
 
+// Check if there's a complete inline_link that overlaps with the given range.
+export function hasCompleteLinkAt(inlineRoot: Parser.SyntaxNode, startPos: number, endPos: number): boolean {
+    const linkNodes = inlineRoot.descendantsOfType('inline_link')
+    for (const link of linkNodes) {
+        // Check if this link overlaps with our range
+        if (link.startIndex <= startPos && link.endIndex >= endPos) {
+            return true
+        }
+        // Also check partial overlap
+        if (link.startIndex < endPos && link.endIndex > startPos) {
+            return true
+        }
+    }
+    return false
+}
+
+// Check if there's a complete image that overlaps with the given range.
+export function hasCompleteImageAt(inlineRoot: Parser.SyntaxNode, startPos: number, endPos: number): boolean {
+    const imageNodes = inlineRoot.descendantsOfType('image')
+    for (const img of imageNodes) {
+        // Check if this image overlaps with our range
+        if (img.startIndex <= startPos && img.endIndex >= endPos) {
+            return true
+        }
+        // Also check partial overlap
+        if (img.startIndex < endPos && img.endIndex > startPos) {
+            return true
+        }
+    }
+    return false
+}
+
+// Check if content has an incomplete link opening ([ without closing ])
+export function hasIncompleteLinkOpening(text: string, inlineParser: Parser | null): boolean {
+    if (!inlineParser) {
+        return false
+    }
+
+    const inlineTree = inlineParser.parse(text)
+    if (!inlineTree) {
+        return false
+    }
+
+    // Tree-sitter parses incomplete link structures.
+    // Look for link_text nodes that aren't part of a complete inline_link
+    const linkTexts = inlineTree.rootNode.descendantsOfType('link_text')
+    const completeLinks = inlineTree.rootNode.descendantsOfType('inline_link')
+    const completeImages = inlineTree.rootNode.descendantsOfType('image')
+
+    for (const linkText of linkTexts) {
+        let isPartOfComplete = false
+
+        // Check if this link_text is inside a complete link or image
+        for (const link of completeLinks) {
+            if (linkText.startIndex >= link.startIndex && linkText.endIndex <= link.endIndex) {
+                isPartOfComplete = true
+                break
+            }
+        }
+        if (!isPartOfComplete) {
+            for (const img of completeImages) {
+                if (linkText.startIndex >= img.startIndex && linkText.endIndex <= img.endIndex) {
+                    isPartOfComplete = true
+                    break
+                }
+            }
+        }
+
+        if (!isPartOfComplete) {
+            return true
+        }
+    }
+
+    return false
+}
+
+// Check if content has an incomplete image opening (![ without closing ])
+export function hasIncompleteImageOpening(text: string, inlineParser: Parser | null): boolean {
+    if (!inlineParser) {
+        return false
+    }
+
+    const inlineTree = inlineParser.parse(text)
+    if (!inlineTree) {
+        return false
+    }
+
+    // Tree-sitter parses incomplete image structures.
+    // Look for image_description nodes that aren't part of a complete image
+    const imageDescs = inlineTree.rootNode.descendantsOfType('image_description')
+    const completeImages = inlineTree.rootNode.descendantsOfType('image')
+
+    for (const desc of imageDescs) {
+        let isPartOfComplete = false
+
+        for (const img of completeImages) {
+            if (desc.startIndex >= img.startIndex && desc.endIndex <= img.endIndex) {
+                isPartOfComplete = true
+                break
+            }
+        }
+
+        if (!isPartOfComplete) {
+            return true
+        }
+    }
+
+    return false
+}
+
 // Check if there's a complete code_span that overlaps with the given range.
 export function hasCompleteCodeSpanAt(inlineRoot: Parser.SyntaxNode, startPos: number, endPos: number): boolean {
     const codeSpans = inlineRoot.descendantsOfType('code_span')
@@ -65,79 +175,69 @@ export function hasCompleteStrikethroughAt(inlineRoot: Parser.SyntaxNode, startP
     return false
 }
 
-// Check if the text contains an unmatched italic marker (* or _)
-// that is not part of a ** sequence.
-// Uses tree-sitter to detect emphasis_delimiter nodes that aren't matched.
+// Check if the text contains an unmatched italic marker (* or _).
+// Uses simple counting since tree-sitter doesn't parse unmatched markers as delimiters.
 export function hasUnmatchedItalicMarker(text: string, inlineParser: Parser | null): boolean {
-    // Use tree-sitter inline parser to check for emphasis markers
-    if (inlineParser) {
-        const inlineTree = inlineParser.parse(text)
-        if (inlineTree) {
-            // Get all emphasis (italic) and strong_emphasis (bold) nodes
-            const emphasisNodes = inlineTree.rootNode.descendantsOfType('emphasis')
-            const strongNodes = inlineTree.rootNode.descendantsOfType('strong_emphasis')
+    // Count * and _ characters that could be emphasis markers
+    // A marker is unmatched if there's an odd count of potential markers
 
-            // Helper to check if position is inside any matched emphasis or strong node
-            const isInsideMatchedNode = (pos: number): boolean => {
-                return emphasisNodes.some(node => pos >= node.startIndex && pos < node.endIndex) ||
-                    strongNodes.some(node => pos >= node.startIndex && pos < node.endIndex)
-            }
+    // Simple approach: check if there's an odd number of * or _ that could be markers
+    // We need to be careful about:
+    // 1. ** (bold) pairs vs * (italic) singles
+    // 2. Escaped markers \* or \_
+    // 3. Markers at word boundaries
 
-            const textContent = inlineTree.rootNode.text
+    let singleAsterisks = 0
+    let singleUnderscores = 0
 
-            // Check for single * that isn't part of ** and isn't inside a matched node
-            for (let i = 0; i < textContent.length; i++) {
-                const char = textContent[i]
-                if (char === '*') {
-                    // Check if it's part of ** or ***
-                    const prevChar = i > 0 ? textContent[i - 1] : ''
-                    const nextChar = i < textContent.length - 1 ? textContent[i + 1] : ''
-
-                    // If this * is adjacent to another *, it's part of ** or ***, skip it
-                    if (prevChar === '*' || nextChar === '*') {
-                        continue
-                    }
-
-                    // If this * is adjacent to /, it's part of /* or */ (comment delimiters), skip it
-                    // These are NOT italic markers but likely code comment syntax
-                    if (prevChar === '/' || nextChar === '/') {
-                        continue
-                    }
-
-                    // This is a lone *, check if it's inside any emphasis or strong_emphasis node
-                    if (!isInsideMatchedNode(i)) {
-                        return true
-                    }
-                } else if (char === '_') {
-                    // Underscore is a potential italic marker
-                    // Check if it's inside a matched node
-                    if (!isInsideMatchedNode(i)) {
-                        return true
-                    }
-                }
-            }
-
-            return false
-        }
-    }
-
-    // Fallback: simple character check without regex
-    // Check for * that isn't part of **
     for (let i = 0; i < text.length; i++) {
         const char = text[i]
+        const prevChar = i > 0 ? text[i - 1] : ''
+        const nextChar = i < text.length - 1 ? text[i + 1] : ''
+
+        // Skip escaped characters
+        if (prevChar === '\\') {
+            continue
+        }
+
         if (char === '*') {
-            const prevChar = i > 0 ? text[i - 1] : ''
-            const nextChar = i < text.length - 1 ? text[i + 1] : ''
-            // Skip if part of ** or adjacent to / (comment delimiters)
-            if (prevChar !== '*' && nextChar !== '*' && prevChar !== '/' && nextChar !== '/') {
-                return true // Lone asterisk found (not in **, /*, or */)
+            // Check if it's part of a ** sequence
+            if (nextChar === '*') {
+                // Start of ** - skip both
+                i++
+                continue
             }
-        } else if (char === '_') {
-            return true // Underscore found
+            if (prevChar === '*') {
+                // End of ** - already skipped the first one
+                continue
+            }
+            // Single *
+            singleAsterisks++
+        }
+
+        if (char === '_') {
+            // Check if it's part of a __ sequence
+            if (nextChar === '_') {
+                i++
+                continue
+            }
+            if (prevChar === '_') {
+                continue
+            }
+            // Single _ - but only if at word boundary (not inside words like foo_bar)
+            const isWordChar = (c: string) => c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+            const prevIsWord = prevChar && isWordChar(prevChar)
+            const nextIsWord = nextChar && isWordChar(nextChar)
+            // _ in the middle of a word is not an emphasis marker
+            if (prevIsWord && nextIsWord) {
+                continue
+            }
+            singleUnderscores++
         }
     }
 
-    return false
+    // If odd number of potential markers, we have unmatched markers
+    return (singleAsterisks % 2 !== 0) || (singleUnderscores % 2 !== 0)
 }
 
 // Check if the position is inside a fenced_code_block or code_span (inline code).

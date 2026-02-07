@@ -1,24 +1,42 @@
 import type { Parser } from 'web-tree-sitter'
-import type { StreamingChunk, BlockState, BlockInfo, HEADER_MARKER_LEVELS, SUPPRESSED_SYNTAX_TYPES } from './types.js'
+import type {
+    StreamingChunk,
+    BlockInfo,
+    SegmentGeneratorState,
+    OpenSpan,
+    ClosedSpan,
+    SpanType,
+    ParserConfig
+} from './types.js'
 import { findActiveNodeAtPosition, findInlineNodeAtPosition, findBlockNode } from './tree-navigation.js'
 import { getBlockInfo, isNewBlock } from './block-detection.js'
 import {
-    detectActiveStyles,
     hasCompleteCodeSpanAt,
     hasCompleteBoldAt,
     hasCompleteItalicAt,
     hasCompleteStrikethroughAt,
+    hasCompleteLinkAt,
+    hasCompleteImageAt,
+    hasIncompleteLinkOpening,
+    hasIncompleteImageOpening,
     hasUnmatchedItalicMarker,
-    isInsideCodeBlock
+    isInsideCodeBlock,
+    detectActiveStyles
 } from './inline-detection.js'
-import { getHeaderContent, getCodeBlockContent } from './content-extraction.js'
+import { getHeaderContent, getCodeBlockContent, getInlineContent } from './content-extraction.js'
 import {
-    getInlineCodeSegments,
-    getBoldSegments,
-    getItalicSegments,
-    getStrikethroughSegments
-} from './inline-extractors.js'
-import { createStreamingChunk, createChunkFromBlockInfo, createPlainTextChunk, createCodeBlockChunk } from './segment-builder.js'
+    createChunkFromBlockInfo,
+    createPlainTextChunk,
+    createCodeBlockChunk,
+    createHeadingChunk,
+    byteOffsetToUtf16,
+
+    createOpenSpan,
+    createClosedSpan,
+    createLinkSpan,
+    createImageSpan,
+    createBlockContext
+} from './segment-builder.js'
 
 // Re-import the constant that we need locally
 const HEADER_MARKER_LEVELS_LOCAL: Record<string, number> = {
@@ -36,27 +54,192 @@ const SUPPRESSED_SYNTAX_TYPES_LOCAL = [
     '|'  // Table pipe delimiters
 ]
 
-export type SegmentGeneratorState = {
-    pendingInlineContent: string
-    pendingInlineStartIndex: number
-    currentBlock: BlockState | null
-}
-
 export type SegmentGeneratorContext = {
     content: string
     currentTree: Parser.Tree
     inlineParser: Parser | null
     state: SegmentGeneratorState
+    config?: ParserConfig
 }
 
-// Generate segments for a range of content.
-// This is the main segment generation function that handles all the complex logic.
+// Create initial segment generator state
+export function createInitialState(): SegmentGeneratorState {
+    return {
+        totalUtf16Offset: 0,
+        lastEmittedOffset: 0,
+        openSpans: [],
+        currentBlock: null,
+        pendingInlineContent: '',
+        accumulatedContent: ''
+    }
+}
+
+// Detect span type from tree-sitter node type
+function detectSpanType(nodeType: string): SpanType | null {
+    switch (nodeType) {
+        case 'strong_emphasis': return 'bold'
+        case 'emphasis': return 'italic'
+        case 'code_span': return 'code'
+        case 'strikethrough': return 'strikethrough'
+        case 'inline_link': return 'link'
+        case 'image': return 'image'
+        default: return null
+    }
+}
+
+// Extract span metadata (URL for links, src/alt for images)
+function extractSpanMetadata(node: Parser.SyntaxNode): { url?: string; src?: string; alt?: string } {
+    if (node.type === 'inline_link') {
+        const destNode = node.descendantsOfType('link_destination')[0]
+        return { url: destNode?.text ?? '' }
+    }
+    if (node.type === 'image') {
+        const destNode = node.descendantsOfType('link_destination')[0]
+        const descNode = node.descendantsOfType('image_description')[0]
+        return {
+            src: destNode?.text ?? '',
+            alt: descNode?.text
+        }
+    }
+    return {}
+}
+
+// Check if span is fully contained within chunk boundaries
+function isSpanContained(spanStart: number, spanEnd: number, chunkStart: number, chunkEnd: number): boolean {
+    return spanStart >= chunkStart && spanEnd <= chunkEnd
+}
+
+// Check if span opens in this chunk but closes later
+function isSpanOpening(spanStart: number, spanEnd: number, chunkStart: number, chunkEnd: number): boolean {
+    return spanStart >= chunkStart && spanStart < chunkEnd && spanEnd > chunkEnd
+}
+
+// Check if span opened earlier and closes in this chunk
+function isSpanClosing(spanStart: number, spanEnd: number, chunkStart: number, chunkEnd: number): boolean {
+    return spanStart < chunkStart && spanEnd >= chunkStart && spanEnd <= chunkEnd
+}
+
+// Create a closed span from node metadata
+function createClosedSpanFromNode(
+    spanType: SpanType,
+    node: Parser.SyntaxNode,
+    offset: number,
+    length: number
+): ClosedSpan | null {
+    const metadata = extractSpanMetadata(node)
+
+    if (spanType === 'link' && metadata.url !== undefined) {
+        return createLinkSpan(offset, length, metadata.url)
+    }
+    if (spanType === 'image' && metadata.src !== undefined) {
+        return createImageSpan(offset, length, metadata.src, metadata.alt)
+    }
+    if (spanType === 'bold' || spanType === 'italic' || spanType === 'code' || spanType === 'strikethrough') {
+        return createClosedSpan(spanType, offset, length)
+    }
+    return null
+}
+
+// Process a single style node and categorize it
+function categorizeSpanNode(
+    node: Parser.SyntaxNode,
+    content: string,
+    chunkStartUtf16: number,
+    chunkEndUtf16: number,
+    openSpans: OpenSpan[]
+): {
+    contained?: ClosedSpan
+    opening?: OpenSpan
+    closing?: ClosedSpan
+    closedOpenIndex?: number
+} {
+    const spanType = detectSpanType(node.type)
+    if (!spanType) return {}
+
+    const spanStartUtf16 = byteOffsetToUtf16(content, node.startIndex)
+    const spanEndUtf16 = byteOffsetToUtf16(content, node.endIndex)
+    const spanLength = spanEndUtf16 - spanStartUtf16
+
+    // Fully contained
+    if (isSpanContained(spanStartUtf16, spanEndUtf16, chunkStartUtf16, chunkEndUtf16)) {
+        const span = createClosedSpanFromNode(spanType, node, spanStartUtf16, spanLength)
+        return span ? { contained: span } : {}
+    }
+
+    // Opens here, closes later
+    if (isSpanOpening(spanStartUtf16, spanEndUtf16, chunkStartUtf16, chunkEndUtf16)) {
+        return { opening: createOpenSpan(spanType, spanStartUtf16) }
+    }
+
+    // Opened earlier, closes here
+    if (isSpanClosing(spanStartUtf16, spanEndUtf16, chunkStartUtf16, chunkEndUtf16)) {
+        const matchingIdx = openSpans.findIndex(s => s.type === spanType)
+        if (matchingIdx !== -1) {
+            const matchingOpen = openSpans[matchingIdx]
+            const totalLength = spanEndUtf16 - matchingOpen.openOffset
+            const span = createClosedSpanFromNode(spanType, node, matchingOpen.openOffset, totalLength)
+            return span ? { closing: span, closedOpenIndex: matchingIdx } : {}
+        }
+    }
+
+    return {}
+}
+
+// Process inline styles and categorize them as opening/closing/contained
+function processInlineSpans(
+    inlineTree: Parser.Tree,
+    chunkStartUtf16: number,
+    chunkEndUtf16: number,
+    content: string,
+    state: SegmentGeneratorState
+): { opening: OpenSpan[]; closing: ClosedSpan[]; contained: ClosedSpan[]; newOpenSpans: OpenSpan[] } {
+    const opening: OpenSpan[] = []
+    const closing: ClosedSpan[] = []
+    const contained: ClosedSpan[] = []
+    const newOpenSpans = [...state.openSpans]
+    const indicesToRemove: number[] = []
+
+    const styleNodeTypes = ['code_span', 'strong_emphasis', 'emphasis', 'strikethrough', 'inline_link', 'image']
+
+    for (const nodeType of styleNodeTypes) {
+        const nodes = inlineTree.rootNode.descendantsOfType(nodeType)
+
+        for (const node of nodes) {
+            const result = categorizeSpanNode(node, content, chunkStartUtf16, chunkEndUtf16, newOpenSpans)
+
+            if (result.contained) {
+                contained.push(result.contained)
+            }
+            if (result.opening) {
+                opening.push(result.opening)
+                newOpenSpans.push(result.opening)
+            }
+            if (result.closing) {
+                closing.push(result.closing)
+                if (result.closedOpenIndex !== undefined) {
+                    indicesToRemove.push(result.closedOpenIndex)
+                }
+            }
+        }
+    }
+
+    // Remove closed spans from open list (in reverse order to preserve indices)
+    indicesToRemove.sort((a, b) => b - a)
+    for (const idx of indicesToRemove) {
+        newOpenSpans.splice(idx, 1)
+    }
+
+    return { opening, closing, contained, newOpenSpans }
+}
+
+// Generate chunks for a range of content using the new orthogonal chunks/spans model.
+// Chunks represent text segments; spans represent inline styles that may cross chunk boundaries.
 export function generateSegments(
     fromIndex: number,
     toIndex: number,
     context: SegmentGeneratorContext
 ): { segments: StreamingChunk[]; state: SegmentGeneratorState } {
-    const { content, currentTree, inlineParser } = context
+    const { content, currentTree, inlineParser, config } = context
     let state = { ...context.state }
 
     if (!currentTree) {
@@ -72,9 +255,14 @@ export function generateSegments(
     if (state.pendingInlineContent) {
         // Prepend pending content
         newContent = state.pendingInlineContent + newContent
-        actualFromIndex = state.pendingInlineStartIndex
-        state.pendingInlineContent = ''
+        actualFromIndex = state.pendingInlineStartIndex ?? fromIndex
+        state = { ...state, pendingInlineContent: '' }
     }
+
+    // Calculate UTF-16 offsets for this chunk
+    const chunkStartUtf16 = state.totalUtf16Offset
+    const chunkTextUtf16Length = newContent.length
+    const chunkEndUtf16 = chunkStartUtf16 + chunkTextUtf16Length
 
     // Check if current content has unmatched inline delimiters
     const inlineNode = findInlineNodeAtPosition(currentTree.rootNode, actualFromIndex)
@@ -130,6 +318,26 @@ export function generateSegments(
                 return { segments, state }
             }
         }
+
+        // Check for incomplete link opening [
+        if (newPortion.includes('[')) {
+            const hasCompleteLink = hasCompleteLinkAt(inlineTree.rootNode, newPortionStart, newPortionEnd)
+            if (!hasCompleteLink && hasIncompleteLinkOpening(newPortion, inlineParser)) {
+                state.pendingInlineContent = newContent
+                state.pendingInlineStartIndex = actualFromIndex
+                return { segments, state }
+            }
+        }
+
+        // Check for incomplete image opening ![
+        if (newPortion.includes('![')) {
+            const hasCompleteImage = hasCompleteImageAt(inlineTree.rootNode, newPortionStart, newPortionEnd)
+            if (!hasCompleteImage && hasIncompleteImageOpening(newPortion, inlineParser)) {
+                state.pendingInlineContent = newContent
+                state.pendingInlineStartIndex = actualFromIndex
+                return { segments, state }
+            }
+        }
     }
 
     // Skip empty content
@@ -141,15 +349,23 @@ export function generateSegments(
     const nodeAtPosition = findActiveNodeAtPosition(currentTree.rootNode, actualFromIndex)
 
     if (!nodeAtPosition) {
-        // If no node found, treat as plain text
-        return {
-            segments: [createPlainTextChunk(newContent)],
-            state
+        // If no node found, treat as plain text with current offset
+        const chunk = createPlainTextChunk(newContent, chunkStartUtf16, {
+            original: config?.includeRawStreamedToken ? newContent : undefined
+        })
+        state = {
+            ...state,
+            totalUtf16Offset: chunkEndUtf16,
+            lastEmittedOffset: chunkEndUtf16,
+            accumulatedContent: state.accumulatedContent + newContent
         }
+        return { segments: [chunk], state }
     }
 
     // Check if the node is a suppressed syntax type
     if (SUPPRESSED_SYNTAX_TYPES_LOCAL.indexOf(nodeAtPosition.type) !== -1) {
+        // Update offset but don't emit
+        state = { ...state, totalUtf16Offset: chunkEndUtf16 }
         return { segments, state }
     }
 
@@ -158,6 +374,7 @@ export function generateSegments(
     while (currentForDelimiter) {
         if (currentForDelimiter.type === 'pipe_table_delimiter_row' ||
             currentForDelimiter.type === 'pipe_table_delimiter_cell') {
+            state = { ...state, totalUtf16Offset: chunkEndUtf16 }
             return { segments, state }
         }
         currentForDelimiter = currentForDelimiter.parent
@@ -165,12 +382,6 @@ export function generateSegments(
 
     // Determine the block type and properties
     const blockInfo = getBlockInfo(nodeAtPosition)
-
-    // Check if we're starting a new block
-    const isNewBlockFlag = isNewBlock(blockInfo, nodeAtPosition, state.currentBlock)
-
-    // Detect styles in the current context
-    const styles = detectActiveStyles(nodeAtPosition, actualFromIndex, actualToIndex, currentTree, inlineParser)
 
     // Process content based on block type
     let processedContent = newContent
@@ -186,7 +397,7 @@ export function generateSegments(
 
         // Don't emit if it's only markers
         if (processedContent.length === 0 || processedContent.trim().length === 0) {
-            state = updateBlockState(state, isNewBlockFlag, blockInfo, nodeAtPosition, actualToIndex, styles, false)
+            state = { ...state, totalUtf16Offset: chunkEndUtf16 }
             return { segments, state }
         }
     } else if (blockInfo.type === 'codeBlock') {
@@ -199,7 +410,7 @@ export function generateSegments(
         }
 
         if (processedContent.length === 0) {
-            state = updateBlockState(state, isNewBlockFlag, blockInfo, nodeAtPosition, actualToIndex, styles, false)
+            state = { ...state, totalUtf16Offset: chunkEndUtf16 }
             return { segments, state }
         }
     } else if (blockInfo.type === 'paragraph') {
@@ -209,75 +420,88 @@ export function generateSegments(
         }
 
         // Handle code fence detection in paragraph content
-        const result = handleCodeFenceInParagraph(newContent, actualFromIndex, actualToIndex, content, segments)
+        const result = handleCodeFenceInParagraph(
+            newContent, actualFromIndex, actualToIndex, content,
+            segments, chunkStartUtf16, config
+        )
         if (result.handled) {
+            state = {
+                ...state,
+                totalUtf16Offset: state.totalUtf16Offset + result.utf16Consumed,
+                lastEmittedOffset: state.totalUtf16Offset + result.utf16Consumed,
+                accumulatedContent: state.accumulatedContent + newContent
+            }
             return { segments: result.segments, state }
         }
     }
 
-    // Process inline styles for non-codeBlock types
-    if (blockInfo.type !== 'codeBlock') {
-        const inlineResult = processInlineStyles(
-            processedContent, nodeAtPosition, actualFromIndex, actualToIndex,
-            styles, blockInfo, isNewBlockFlag, state, currentTree, inlineParser!
+    // Process inline spans for non-codeBlock types
+    let opening: OpenSpan[] = []
+    let closing: ClosedSpan[] = []
+    let contained: ClosedSpan[] = []
+    let strippedContent = processedContent
+
+    if (blockInfo.type !== 'codeBlock' && inlineParser) {
+        const fullContent = state.accumulatedContent + processedContent
+        const inlineTree = inlineParser.parse(fullContent)
+
+        // The chunk boundaries in the ACCUMULATED content space
+        const accumulatedOffset = state.accumulatedContent.length
+        const chunkStartInAccumulated = accumulatedOffset
+        const chunkEndInAccumulated = accumulatedOffset + processedContent.length
+
+        const spanResult = processInlineSpans(
+            inlineTree,
+            chunkStartInAccumulated,  // Use position in accumulated content
+            chunkEndInAccumulated,
+            fullContent,
+            state
         )
+        opening = spanResult.opening
+        closing = spanResult.closing
+        contained = spanResult.contained
+        state = { ...state, openSpans: spanResult.newOpenSpans }
 
-        if (inlineResult.handled) {
-            return { segments: inlineResult.segments, state: inlineResult.state }
-        }
+        // Strip inline markers from the content
+        strippedContent = getInlineContent(
+            processedContent,
+            inlineParser.parse(processedContent),  // Parse just the new content
+            0,
+            processedContent.length
+        )
     }
 
-    // Determine effective block defining status
-    let effectiveIsBlockDefining = isNewBlockFlag
-    if (!isNewBlockFlag && state.currentBlock && !state.currentBlock.hasEmittedContent && state.currentBlock.type === blockInfo.type) {
-        effectiveIsBlockDefining = true
-    }
-
-    // Create and push the segment
-    segments.push(createChunkFromBlockInfo(
-        processedContent,
-        styles,
+    // Create the chunk with the new API
+    const chunk = createChunkFromBlockInfo(
+        strippedContent,
+        chunkStartUtf16,
         blockInfo,
-        effectiveIsBlockDefining,
-        newContent.includes('\n')
-    ))
+        {
+            opening,
+            closing,
+            contained,
+            original: config?.includeRawStreamedToken ? newContent : undefined
+        }
+    )
+    segments.push(chunk)
 
-    // Update block tracking
-    state = updateBlockState(state, isNewBlockFlag, blockInfo, nodeAtPosition, actualToIndex, styles, true)
-
-    return { segments, state }
-}
-
-// Update the block state after processing content
-function updateBlockState(
-    state: SegmentGeneratorState,
-    isNewBlockFlag: boolean,
-    blockInfo: BlockInfo,
-    nodeAtPosition: Parser.SyntaxNode,
-    actualToIndex: number,
-    styles: string[],
-    hasEmittedContent: boolean
-): SegmentGeneratorState {
-    const newState = { ...state }
-
-    if (isNewBlockFlag) {
-        newState.currentBlock = {
+    // Update state
+    state = {
+        ...state,
+        totalUtf16Offset: chunkStartUtf16 + processedContent.length,
+        lastEmittedOffset: chunkStartUtf16 + processedContent.length,
+        accumulatedContent: state.accumulatedContent + newContent,
+        currentBlock: {
             type: blockInfo.type,
             level: blockInfo.level,
             language: blockInfo.language,
             startIndex: nodeAtPosition.startIndex,
             lastSegmentEnd: actualToIndex,
-            styles: new Set(styles),
-            hasEmittedContent
+            hasEmittedContent: true
         }
-    } else if (newState.currentBlock) {
-        newState.currentBlock = { ...newState.currentBlock }
-        newState.currentBlock.lastSegmentEnd = actualToIndex
-        newState.currentBlock.hasEmittedContent = newState.currentBlock.hasEmittedContent || hasEmittedContent
-        styles.forEach(s => newState.currentBlock!.styles.add(s))
     }
 
-    return newState
+    return { segments, state }
 }
 
 // Handle code fence detection when tree-sitter sees it as paragraph
@@ -286,17 +510,20 @@ function handleCodeFenceInParagraph(
     actualFromIndex: number,
     actualToIndex: number,
     content: string,
-    existingSegments: StreamingChunk[]
-): { handled: boolean; segments: StreamingChunk[] } {
+    existingSegments: StreamingChunk[],
+    currentUtf16Offset: number,
+    config?: ParserConfig
+): { handled: boolean; segments: StreamingChunk[]; utf16Consumed: number } {
     const segments = [...existingSegments]
+    let utf16Consumed = 0
 
-    // Check if new content contains a code fence opening
-    const codeFenceOpeningMatch = newContent.match(/```([a-zA-Z0-9]*)\n?/)
-    if (!codeFenceOpeningMatch) {
-        // Also check for content MIDDLE of a code block
+    // Find code fence opening (```)
+    const fenceStart = newContent.indexOf('```')
+    if (fenceStart === -1) {
+        // No fence in new content - check if we're inside an existing code block
         const contentBeforeThis = content.substring(0, actualFromIndex)
-        const allFences = contentBeforeThis.match(/```/g) || []
-        const isInsideCodeBlockContext = allFences.length % 2 === 1
+        const fenceCount = countOccurrences(contentBeforeThis, '```')
+        const isInsideCodeBlockContext = fenceCount % 2 === 1
 
         if (isInsideCodeBlockContext) {
             const closingFenceIdx = newContent.indexOf('```')
@@ -305,141 +532,121 @@ function handleCodeFenceInParagraph(
                 // No closing fence - emit as code block content
                 return {
                     handled: true,
-                    segments: [createCodeBlockChunk(newContent)]
+                    segments: [createCodeBlockChunk(newContent, currentUtf16Offset, '', {
+                        original: config?.includeRawStreamedToken ? newContent : undefined
+                    })],
+                    utf16Consumed: newContent.length
                 }
             } else {
                 // Has closing fence
                 const codeContent = newContent.substring(0, closingFenceIdx)
                 const afterFence = newContent.substring(closingFenceIdx + 3)
+                let offset = currentUtf16Offset
 
                 if (codeContent.length > 0) {
-                    segments.push(createCodeBlockChunk(codeContent))
+                    segments.push(createCodeBlockChunk(codeContent, offset, '', {
+                        original: config?.includeRawStreamedToken ? codeContent : undefined
+                    }))
+                    offset += codeContent.length
                 }
 
-                const textAfterFence = afterFence.replace(/^\n/, '')
+                // Skip the fence markers
+                offset += 3
+
+                const textAfterFence = stripLeadingNewline(afterFence)
                 if (textAfterFence.length > 0) {
-                    segments.push(createPlainTextChunk(textAfterFence, true))
+                    segments.push(createPlainTextChunk(textAfterFence, offset, {
+                        original: config?.includeRawStreamedToken ? textAfterFence : undefined
+                    }))
                 }
 
-                return { handled: true, segments }
+                return { handled: true, segments, utf16Consumed: newContent.length }
             }
         }
 
-        return { handled: false, segments }
+        return { handled: false, segments, utf16Consumed: 0 }
     }
 
-    const fenceStart = newContent.indexOf(codeFenceOpeningMatch[0])
-    const fenceLanguage = codeFenceOpeningMatch[1] || ''
-    const fenceMarker = codeFenceOpeningMatch[0]
+    // Extract language from fence line (```language)
+    const afterFenceMarker = newContent.substring(fenceStart + 3)
+    const newlineIdx = afterFenceMarker.indexOf('\n')
+    const fenceLanguage = newlineIdx === -1
+        ? afterFenceMarker.trim()
+        : afterFenceMarker.substring(0, newlineIdx).trim()
+    const fenceMarkerLength = 3 + (newlineIdx === -1 ? afterFenceMarker.length : newlineIdx + 1)
 
     // Check for closing fence
-    const positionOfFence = actualFromIndex + fenceStart
-    const contentFromFence = content.substring(positionOfFence)
-    const closingFenceIdx = contentFromFence.substring(fenceMarker.length).indexOf('```')
+    const contentAfterOpening = newlineIdx === -1
+        ? ''
+        : afterFenceMarker.substring(newlineIdx + 1)
+    const closingFenceIdx = contentAfterOpening.indexOf('```')
 
     // Content BEFORE the fence
     const contentBeforeFence = newContent.substring(0, fenceStart)
+    let offset = currentUtf16Offset
 
     if (closingFenceIdx === -1) {
         // No closing fence yet - emit content before fence and buffer the rest
         if (contentBeforeFence.trim().length > 0) {
-            segments.push(createPlainTextChunk(contentBeforeFence))
+            segments.push(createPlainTextChunk(contentBeforeFence, offset, {
+                original: config?.includeRawStreamedToken ? contentBeforeFence : undefined
+            }))
+            utf16Consumed += contentBeforeFence.length
         }
 
-        // This would need state management - return partial result
-        // The caller should handle buffering
-        return { handled: true, segments }
+        return { handled: true, segments, utf16Consumed }
     }
 
     // Complete code block structure
     if (contentBeforeFence.trim().length > 0) {
-        segments.push(createPlainTextChunk(contentBeforeFence))
+        segments.push(createPlainTextChunk(contentBeforeFence, offset, {
+            original: config?.includeRawStreamedToken ? contentBeforeFence : undefined
+        }))
+        offset += contentBeforeFence.length
     }
 
-    const contentAfterOpeningFence = newContent.substring(fenceStart + fenceMarker.length)
-    const closingFenceInContent = contentAfterOpeningFence.indexOf('```')
+    // Skip fence marker
+    offset += fenceMarkerLength
 
-    let codeContent: string
-    if (closingFenceInContent === -1) {
-        codeContent = contentAfterOpeningFence
-    } else {
-        codeContent = contentAfterOpeningFence.substring(0, closingFenceInContent)
-    }
-
-    codeContent = codeContent.replace(/^\n/, '')
+    const codeContent = contentAfterOpening.substring(0, closingFenceIdx)
 
     if (codeContent.length > 0) {
-        segments.push(createCodeBlockChunk(codeContent, fenceLanguage, true))
+        segments.push(createCodeBlockChunk(codeContent, offset, fenceLanguage, {
+            original: config?.includeRawStreamedToken ? codeContent : undefined
+        }))
+        offset += codeContent.length
     }
 
-    if (closingFenceInContent !== -1) {
-        const afterClosingFence = contentAfterOpeningFence.substring(closingFenceInContent + 3)
-        const textAfterFence = afterClosingFence.replace(/^\n/, '')
-        if (textAfterFence.trim().length > 0) {
-            segments.push(createPlainTextChunk(textAfterFence, true))
-        }
+    // Skip closing fence
+    offset += 3
+
+    const afterClosingFence = contentAfterOpening.substring(closingFenceIdx + 3)
+    const textAfterFence = stripLeadingNewline(afterClosingFence)
+    if (textAfterFence.trim().length > 0) {
+        segments.push(createPlainTextChunk(textAfterFence, offset, {
+            original: config?.includeRawStreamedToken ? textAfterFence : undefined
+        }))
     }
 
-    return { handled: true, segments }
+    return { handled: true, segments, utf16Consumed: newContent.length }
 }
 
-// Process inline styles and return segments if applicable
-function processInlineStyles(
-    processedContent: string,
-    nodeAtPosition: Parser.SyntaxNode,
-    actualFromIndex: number,
-    actualToIndex: number,
-    styles: string[],
-    blockInfo: BlockInfo,
-    isNewBlockFlag: boolean,
-    state: SegmentGeneratorState,
-    currentTree: Parser.Tree,
-    inlineParser: Parser
-): { handled: boolean; segments: StreamingChunk[]; state: SegmentGeneratorState } {
-    const styleHandlers: Array<{
-        style: string
-        extractor: (content: string, node: Parser.SyntaxNode, startByte: number, endByte: number, baseStyles: string[], blockInfo: BlockInfo, currentTree: Parser.Tree, inlineParser: Parser) => StreamingChunk[]
-    }> = [
-            { style: 'code', extractor: getInlineCodeSegments },
-            { style: 'bold', extractor: getBoldSegments },
-            { style: 'italic', extractor: getItalicSegments },
-            { style: 'strikethrough', extractor: getStrikethroughSegments },
-        ]
-
-    for (const { style, extractor } of styleHandlers) {
-        if (styles.indexOf(style) !== -1) {
-            let splitSegments: StreamingChunk[] = []
-            try {
-                splitSegments = extractor(
-                    processedContent, nodeAtPosition, actualFromIndex, actualToIndex,
-                    styles, blockInfo, currentTree, inlineParser
-                )
-            } catch (e) {
-                console.warn(`[PARSER] Failed to extract ${style} segments, will use default processing:`, e)
-                continue
-            }
-
-            if (splitSegments.length > 0) {
-                // Determine effective block defining
-                let effectiveIsBlockDefining = isNewBlockFlag
-                if (!isNewBlockFlag && state.currentBlock && !state.currentBlock.hasEmittedContent && state.currentBlock.type === blockInfo.type) {
-                    effectiveIsBlockDefining = true
-                }
-
-                // Apply block defining flag to first segment
-                splitSegments.forEach((seg, index) => {
-                    if (index === 0 && seg.segment) {
-                        seg.segment.isBlockDefining = effectiveIsBlockDefining
-                    }
-                })
-
-                // Update state
-                const newState = updateBlockState(state, isNewBlockFlag, blockInfo, nodeAtPosition, actualToIndex, styles, true)
-
-                return { handled: true, segments: splitSegments, state: newState }
-            }
-        }
+// Count occurrences of a substring
+function countOccurrences(str: string, substr: string): number {
+    let count = 0
+    let pos = 0
+    while ((pos = str.indexOf(substr, pos)) !== -1) {
+        count++
+        pos += substr.length
     }
-
-    return { handled: false, segments: [], state }
+    return count
 }
+
+// Strip leading newline if present
+function stripLeadingNewline(str: string): string {
+    if (str.startsWith('\n')) {
+        return str.substring(1)
+    }
+    return str
+}
+

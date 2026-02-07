@@ -1,5 +1,130 @@
 import type { Parser } from 'web-tree-sitter'
 
+// ============================================================================
+// SPAN TYPES - Typed spans with metadata
+// ============================================================================
+
+// Typed span with metadata. Plain strings don't scale —
+// links need URLs, images need src/alt, etc.
+export type Span =
+    | { type: 'bold' }
+    | { type: 'italic' }
+    | { type: 'code' }
+    | { type: 'strikethrough' }
+    | { type: 'link'; url: string }
+    | { type: 'image'; src: string; alt?: string }
+
+// Extract the type string from Span union
+export type SpanType = Span['type']
+
+// An open span is a span that started but hasn't closed yet.
+// The full span info (like URL for links) is only available on close.
+export type OpenSpan = {
+    type: SpanType
+    // UTF-16 offset from stream start where this span opened
+    openOffset: number
+}
+
+// A closed span includes the full span data plus position info.
+export type ClosedSpan = Span & {
+    // UTF-16 offset from stream start
+    offset: number
+    // Length in UTF-16 code units
+    length: number
+}
+
+// ============================================================================
+// BLOCK TYPES
+// ============================================================================
+
+// Block types the parser recognizes.
+export type BlockType =
+    | 'paragraph'
+    | 'heading'
+    | 'code_block'
+    | 'list_item'
+    | 'table'
+    | 'table_row'
+    | 'table_cell'
+    | 'blockquote'
+
+// Block context for a chunk
+export type BlockContext = {
+    type: BlockType
+    // For headings: 1-6
+    level?: number
+    // For code blocks: language identifier
+    language?: string
+}
+
+// ============================================================================
+// CHUNK TYPE - Core output unit
+// ============================================================================
+
+// A chunk is a unit of parsed output. Chunks and spans are
+// completely orthogonal — spans can start/end mid-chunk,
+// multiple spans can exist in one chunk, etc.
+export type Chunk = {
+    // Plain text with formatting removed
+    text: string
+
+    // UTF-16 offset from stream start
+    offset: number
+
+    // Length in UTF-16 code units
+    length: number
+
+    // Block context this chunk belongs to
+    block: BlockContext
+
+    // Spans that opened in this chunk (will close in a future chunk)
+    opening: OpenSpan[]
+
+    // Spans that closed in this chunk (opened in a past chunk)
+    closing: ClosedSpan[]
+
+    // Spans fully contained within this chunk
+    contained: ClosedSpan[]
+
+    // If set, this chunk corrects previous output starting from this
+    // UTF-16 offset. Consumer should discard everything from this
+    // offset onwards and replace with this chunk + subsequent chunks.
+    backtrackOffset?: number
+
+    // Original markdown source (only if includeRawStreamedToken config is true).
+    // Useful as fallback when parser messes up or for unsupported formats.
+    original?: string
+}
+
+// Stream status wrapper for chunks.
+export type StreamingChunk =
+    | { status: 'STREAMING'; chunk: Chunk }
+    | { status: 'START_STREAM' }
+    | { status: 'END_STREAM' }
+
+// ============================================================================
+// PARSER CONFIGURATION
+// ============================================================================
+
+// Parser configuration options.
+export type ParserConfig = {
+    // Maximum characters the consumer can backtrack.
+    // Default: undefined (unlimited backtracking).
+    //
+    // When corrections exceed this window:
+    // - Best effort: fix what's within window
+    // - Fall back to plain text if structure broken beyond repair
+    windowSize?: number
+
+    // Include original markdown source in chunk output.
+    // Default: false (saves payload size).
+    includeRawStreamedToken?: boolean
+}
+
+// ============================================================================
+// INTERNAL TYPES - Used by parser internals
+// ============================================================================
+
 // Lookup map for tree-sitter ATX header marker node types to their heading levels.
 // Used for both level extraction and marker-only content detection.
 export const HEADER_MARKER_LEVELS: Record<string, number> = {
@@ -24,24 +149,6 @@ export const SUPPRESSED_SYNTAX_TYPES = [
     '|'  // Table pipe delimiters
 ] as const
 
-// Represents a parsed segment of streaming markdown content
-export type StreamingSegment = {
-    level?: number
-    language?: string
-    segment: string
-    styles: string[]
-    type: string
-    isBlockDefining: boolean
-    isProcessingNewLine: boolean
-    blockId?: number
-}
-
-// A chunk of streaming data with status information
-export type StreamingChunk = {
-    status: string
-    segment?: StreamingSegment
-}
-
 // Tracks the current block's state during parsing
 export type BlockState = {
     type: string
@@ -49,7 +156,6 @@ export type BlockState = {
     language?: string
     startIndex: number
     lastSegmentEnd: number
-    styles: Set<string>
     hasEmittedContent?: boolean
 }
 
@@ -67,7 +173,7 @@ export type InlineExtractionContext = {
     node: Parser.SyntaxNode
     startByte: number
     endByte: number
-    baseStyles: string[]
+    baseSpans: OpenSpan[]
     blockInfo: BlockInfo
     inlineParser: Parser
     currentTree: Parser.Tree
@@ -75,7 +181,7 @@ export type InlineExtractionContext = {
 
 // Configuration for a specific inline style type
 export type InlineStyleConfig = {
-    styleName: string
+    styleName: SpanType
     nodeType: string
     delimiterType: string
     minDelimiters: number
@@ -107,4 +213,44 @@ export const INLINE_STYLE_CONFIGS: Record<string, InlineStyleConfig> = {
         delimiterType: 'emphasis_delimiter',
         minDelimiters: 4,  // ~~ on each side = 4 delimiter nodes
     },
+    link: {
+        styleName: 'link',
+        nodeType: 'inline_link',
+        delimiterType: '',
+        minDelimiters: 0,
+    },
+    image: {
+        styleName: 'image',
+        nodeType: 'image',
+        delimiterType: '',
+        minDelimiters: 0,
+    },
+}
+
+// ============================================================================
+// SEGMENT GENERATOR STATE
+// ============================================================================
+
+// State maintained by the segment generator across chunks
+export type SegmentGeneratorState = {
+    // Total UTF-16 code units emitted so far (from stream start)
+    totalUtf16Offset: number
+
+    // Last emitted UTF-16 offset (for backtrack detection)
+    lastEmittedOffset: number
+
+    // Currently open spans that haven't closed yet
+    openSpans: OpenSpan[]
+
+    // Current block being processed
+    currentBlock: BlockState | null
+
+    // Pending inline content waiting for delimiter closure
+    pendingInlineContent: string
+
+    // Start index for pending inline content
+    pendingInlineStartIndex?: number
+
+    // Accumulated content for backtrack reference
+    accumulatedContent: string
 }

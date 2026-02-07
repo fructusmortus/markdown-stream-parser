@@ -132,40 +132,167 @@ for await (const chunk of ["Hello", " ~~world~~", "!", "  \n"]) {
 parser.stopParsing()
 ```
 
-The output is a series of objects containing the content of a parsed segment, the type of segment, and any possible inline styles.
+The output is a series of `StreamingChunk` objects. Each chunk contains the text content, UTF-16 offset from the start of the stream, block context, and **orthogonal span information**.
 
 ```javascript
+{ status: 'START_STREAM' }
 {
   status: 'STREAMING',
-  segment: {
-    segment: 'Hello ',
-    styles: [],
-    type: 'paragraph',
-    isBlockDefining: true, // Indicates beginning of a new block, e.g. paragraph, heading, list etc...
-    isProcessingNewLine: true
+  chunk: {
+    text: 'Hello ',
+    offset: 0,
+    length: 6,
+    block: { type: 'paragraph' },
+    opening: [],      // Spans that open but don't close in this chunk
+    closing: [],      // Spans that close in this chunk (opened earlier)
+    contained: []     // Spans fully contained within this chunk
   }
 }
 {
   status: 'STREAMING',
-  segment: {
-    segment: 'world',
-    styles: [ 'strikethrough' ],
-    type: 'paragraph',
-    isBlockDefining: false,
-    isProcessingNewLine: false
+  chunk: {
+    text: 'world',
+    offset: 6,
+    length: 5,
+    block: { type: 'paragraph' },
+    opening: [],
+    closing: [],
+    contained: [
+      { type: 'strikethrough', offset: 6, length: 5 }  // ~~world~~
+    ]
   }
 }
 {
   status: 'STREAMING',
-  segment: {
-    segment: '!  ',
-    styles: [],
-    type: 'paragraph',
-    isBlockDefining: false,
-    isProcessingNewLine: false
+  chunk: {
+    text: '!  ',
+    offset: 11,
+    length: 3,
+    block: { type: 'paragraph' },
+    opening: [],
+    closing: [],
+    contained: []
   }
 }
 { status: 'END_STREAM' }
+```
+
+### Key Concepts in the New API
+
+- **`offset`**: UTF-16 code unit offset from the start of the stream
+- **`length`**: UTF-16 code unit length of the text
+- **`block`**: Block-level context (`paragraph`, `heading`, `code_block`, `list_item`, `table`, etc.)
+- **`opening`**: Spans that start in this chunk but don't close (span continues to next chunks)
+- **`closing`**: Spans that close in this chunk (were opened in earlier chunks)
+- **`contained`**: Spans fully contained within this chunk
+
+
+## Consumer Span State Management
+
+The new API uses an **orthogonal model** where chunks and spans are completely independent. Spans can cross chunk boundaries. Consumers must track open spans to properly render styled content.
+
+### How to Track Span State
+
+```typescript
+import { MarkdownStreamParser, OpenSpan, ClosedSpan, Chunk } from '@lixpi/markdown-stream-parser'
+
+const parser = MarkdownStreamParser.getInstance('session-1')
+
+// Track currently open spans
+let openSpans: OpenSpan[] = []
+
+parser.subscribeToTokenParse((streamingChunk, unsubscribe) => {
+    if (streamingChunk.status === 'START_STREAM') {
+        openSpans = []  // Reset on new stream
+        return
+    }
+
+    if (streamingChunk.status === 'END_STREAM') {
+        unsubscribe()
+        return
+    }
+
+    const chunk = streamingChunk.chunk
+
+    // Handle backtracking (parser corrected previous output)
+    if (chunk.backtrackOffset !== undefined) {
+        // Remove content from offset `chunk.backtrackOffset` onwards
+        // Your render buffer should be truncated to this offset
+        // Also filter out any open spans that started after backtrackOffset
+        openSpans = openSpans.filter(s => s.openOffset < chunk.backtrackOffset!)
+    }
+
+    // 1. Add new opening spans to our tracking list
+    openSpans.push(...chunk.opening)
+
+    // 2. Process closing spans (remove from tracking, render complete span)
+    for (const closingSpan of chunk.closing) {
+        // Find and remove the matching open span
+        const openIndex = openSpans.findIndex(s => s.type === closingSpan.type)
+        if (openIndex !== -1) {
+            openSpans.splice(openIndex, 1)
+        }
+        // Now you have a complete span with offset and length
+        // Use closingSpan.offset and closingSpan.length to apply styling
+    }
+
+    // 3. Contained spans are already complete (no tracking needed)
+    // Just apply their styling: contained.offset, contained.length
+
+    // 4. Render the chunk text with active styles
+    const activeStyles = [
+        ...openSpans.map(s => s.type),
+        ...chunk.contained.map(s => s.type)
+    ]
+    renderText(chunk.text, chunk.block, activeStyles)
+})
+```
+
+### Span Types
+
+```typescript
+type SpanType = 'bold' | 'italic' | 'code' | 'strikethrough' | 'link' | 'image'
+
+// Opening span: we know where it starts, but it's not closed yet
+type OpenSpan = { type: SpanType; openOffset: number }
+
+// Closed/contained span: complete with offset and length
+type ClosedSpan = Span & { offset: number; length: number }
+
+// Link and image spans include additional metadata
+type LinkSpan = { type: 'link'; url: string; offset: number; length: number }
+type ImageSpan = { type: 'image'; src: string; alt?: string; offset: number; length: number }
+```
+
+### Handling Backtracking
+
+The parser may sometimes need to **correct** previously emitted chunks. This happens when tree-sitter reinterprets the content as more tokens arrive.
+
+When `chunk.backtrackOffset` is present:
+1. **Discard content** from that offset onwards in your render buffer
+2. **Filter open spans** to remove any that started after the backtrack offset
+3. **Apply the new chunk** which contains the corrected content
+
+```typescript
+if (chunk.backtrackOffset !== undefined) {
+    // Truncate your output buffer to backtrackOffset
+    outputBuffer = outputBuffer.slice(0, chunk.backtrackOffset)
+
+    // Remove spans that are no longer valid
+    openSpans = openSpans.filter(s => s.openOffset < chunk.backtrackOffset!)
+}
+```
+
+### Configuration Options
+
+```typescript
+const parser = MarkdownStreamParser.getInstance('session-1', {
+    windowSize: 500,              // Lookback window for backtrack detection (chars)
+    includeRawStreamedToken: true // Include original token in chunk.original
+})
+
+// Or configure after creation
+parser.setConfig({ windowSize: 1000 })
 ```
 
 
@@ -187,13 +314,13 @@ It will **always remain `render-agnostic`** - whatever you use to render your st
   - [x] Inline Strikethrough (`~~text~~`)
   - [x] Inline Code (`` `code` ``)
 - [x] Code Blocks (```` ```code-block``` ````) with language detection
-- [ ] Blockquotes (`> quote`) [Iusse #2](https://github.com/Lixpi/markdown-stream-parser/issues/2)
-- [ ] //TODO: PRIORITY: Ordered Lists (`1. item`) [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
-- [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`) *BLOCKED BY:* [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
-- [ ] //TODO: Task Lists (`- [ ] item`) *BLOCKED BY:* [Iusse #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
-- [ ] //TODO: PRIORITY: Tables [Iusse #7](https://github.com/Lixpi/markdown-stream-parser/issues/7)
-- [ ] //TODO: PRIORITY: Links (`[text](url)`)
-- [ ] //TODO: PRIORITY: Images (`![alt](url)`)
+- [x] Links (`[text](url)`) - with URL extraction
+- [x] Images (`![alt](url)`) - with src and alt extraction
+- [ ] Blockquotes (`> quote`) [Issue #2](https://github.com/Lixpi/markdown-stream-parser/issues/2)
+- [ ] //TODO: PRIORITY: Ordered Lists (`1. item`) [Issue #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
+- [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`) *BLOCKED BY:* [Issue #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
+- [ ] //TODO: Task Lists (`- [ ] item`) *BLOCKED BY:* [Issue #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
+- [ ] //TODO: PRIORITY: Tables [Issue #7](https://github.com/Lixpi/markdown-stream-parser/issues/7)
 - [ ] //TODO: Horizontal Rules (`---`, `***`, `___`)
 - [ ] //TODO: Footnotes
 - [ ] //TODO: HTML blocks
@@ -304,9 +431,9 @@ graph TB
         BD[block-detection.ts]
         ID[inline-detection.ts]
         CE[content-extraction.ts]
-        IE[inline-extractors.ts]
         TN[tree-navigation.ts]
         SB[segment-builder.ts]
+        TY[types.ts]
     end
 
     subgraph "External"
@@ -319,10 +446,11 @@ graph TB
     SG --> BD
     SG --> ID
     SG --> CE
-    SG --> IE
+    SG --> SB
+    SG --> TY
     BD --> TN
     ID --> TN
-    IE --> SB
+    SB --> TY
     CE --> TS
     BD --> TS
     ID --> TS
@@ -332,18 +460,18 @@ graph TB
 
 | Module | Responsibility |
 |--------|----------------|
-| `segment-generator.ts` | Main orchestrator - generates segments from content ranges |
-| `block-detection.ts` | Figures out block type (header, paragraph, code block, list, table) |
-| `inline-detection.ts` | Detects active inline styles (bold, italic, code, strikethrough) |
+| `segment-generator.ts` | Main orchestrator - generates chunks from content ranges with span detection |
+| `block-detection.ts` | Determines block type (heading, paragraph, code_block, list_item, table) |
+| `inline-detection.ts` | Detects inline spans (bold, italic, code, strikethrough, link, image) |
 | `content-extraction.ts` | Strips markdown syntax and extracts clean content |
-| `inline-extractors.ts` | Extracts styled segments with proper marker stripping |
 | `tree-navigation.ts` | AST traversal utilities |
-| `segment-builder.ts` | Creates segment objects with consistent structure |
+| `segment-builder.ts` | Creates Chunk and Span objects with UTF-16 offsets |
+| `types.ts` | Type definitions (Chunk, Span, BlockContext, etc.) |
 
 ### Parser API Flow
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'noteBkgColor': '#82B2C0', 'noteTextColor': '#1a3a47', 'noteBorderColor': '#5a9aad', 'actorBkg': '#F6C7B3', 'actorBorder': '#d4956a', 'actorTextColor': '#5a3a2a', 'actorLineColor': '#d4956a', 'signalColor': '#d4956a', 'signalTextColor': '#5a3a2a', 'labelBoxBkgColor': '#F6C7B3', 'labelBoxBorderColor': '#d4956a', 'labelTextColor': '#5a3a2a', 'loopTextColor': '#5a3a2a', 'activationBorderColor': '#d4956a', 'activationBkgColor': '#C3DEDD', 'sequenceNumberColor': '#5a3a2a'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': { 'noteBkgColor': '#82B2C0', 'noteTextColor': '#1a3a47', 'noteBorderColor': '#5a9aad', 'actorBkg': '#F6C7B3', 'actorBorder': '#d4956a', 'actorTextColor': '#5a3a2a', 'actorLineColor': '#d4956a', 'signalColor': '#d4956a', 'signalTextColor': '#5a3a2a', 'labelBoxBkgColor': '#F6C7B3', 'labelBoxBorderColor': '#d4956a', 'labelTextColor': '#5a3a2a', 'loopTextColor': '#5a3a2a', 'activationBorderColor': '#9DC49D', 'activationBkgColor': '#9DC49D', 'sequenceNumberColor': '#5a3a2a'}}}%%
 sequenceDiagram
     participant App as Your App
     participant Parser as MarkdownStreamParser
@@ -351,39 +479,69 @@ sequenceDiagram
     participant TS as Tree-sitter
     participant Gen as SegmentGenerator
 
+    %% ═══════════════════════════════════════════════════════════════
+    %% SETUP PHASE
+    %% ═══════════════════════════════════════════════════════════════
     rect rgb(220, 236, 233)
-        Note over App, Gen: Setup Phase
-        App->>Parser: getInstance(sessionId)
+        Note over App, Gen: PHASE 1 - Setup
+        App->>Parser: getInstance(sessionId, config?)
         activate Parser
         Parser->>TS: load WASM grammars
+        activate TS
+        TS-->>Parser: grammars loaded
+        deactivate TS
         Parser-->>App: parser instance
+        deactivate Parser
     end
 
+    %% ═══════════════════════════════════════════════════════════════
+    %% SUBSCRIPTION PHASE
+    %% ═══════════════════════════════════════════════════════════════
     rect rgb(195, 222, 221)
-        Note over App, Gen: Subscription Phase
+        Note over App, Gen: PHASE 2 - Subscription
         App->>Parser: subscribeToTokenParse(listener)
+        activate Parser
         App->>Parser: startParsing()
         Parser-->>App: START_STREAM event
+        deactivate Parser
     end
 
+    %% ═══════════════════════════════════════════════════════════════
+    %% STREAMING PHASE
+    %% ═══════════════════════════════════════════════════════════════
     rect rgb(246, 199, 179)
-        Note over App, Gen: Streaming Phase
+        Note over App, Gen: PHASE 3 - Streaming
         loop For each LLM token
             App->>Parser: parseToken(chunk)
+            activate Parser
             Parser->>Buffer: receiveChunk(chunk)
-            Buffer->>Parser: segment ready
+            activate Buffer
+            Buffer-->>Parser: content ready
+            deactivate Buffer
             Parser->>TS: parse(content)
+            activate TS
             TS-->>Parser: AST
-            Parser->>Gen: generateSegments(range)
-            Gen-->>Parser: StreamingChunk[]
-            Parser-->>App: notify(segment)
+            deactivate TS
+            Parser->>Gen: generateSegments(range, state)
+            activate Gen
+            Gen-->>Parser: Chunk[] with spans
+            deactivate Gen
+            Parser-->>App: notify(StreamingChunk)
+            deactivate Parser
         end
     end
 
+    %% ═══════════════════════════════════════════════════════════════
+    %% CLEANUP PHASE
+    %% ═══════════════════════════════════════════════════════════════
     rect rgb(242, 234, 224)
-        Note over App, Gen: Cleanup Phase
+        Note over App, Gen: PHASE 4 - Cleanup
         App->>Parser: stopParsing()
+        activate Parser
         Parser->>Buffer: flushBuffer()
+        activate Buffer
+        Buffer-->>Parser: buffer flushed
+        deactivate Buffer
         Parser-->>App: END_STREAM event
         deactivate Parser
         App->>Parser: removeInstance(sessionId)
@@ -395,34 +553,38 @@ sequenceDiagram
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#F6C7B3', 'primaryTextColor': '#5a3a2a', 'primaryBorderColor': '#d4956a', 'secondaryColor': '#C3DEDD', 'lineColor': '#d4956a', 'textColor': '#5a3a2a'}}}%%
 stateDiagram-v2
-    [*] --> Idle: getInstance()
+    [*] --> Idle: getInstance(config?)
 
     Idle --> Parsing: startParsing()
-    
+
     state Parsing {
         [*] --> AwaitingToken
-        
+
         AwaitingToken --> ProcessingChunk: parseToken(chunk)
         ProcessingChunk --> DetectingBlock: tree-sitter parse
-        DetectingBlock --> ProcessingHeader: atx_heading found
+        ProcessingChunk --> BacktrackDetected: getChangedRanges() detects change
+        BacktrackDetected --> DetectingBlock: emit with backtrackOffset
+        DetectingBlock --> ProcessingHeading: atx_heading found
         DetectingBlock --> ProcessingParagraph: paragraph found
         DetectingBlock --> ProcessingCodeBlock: fenced_code_block found
         DetectingBlock --> ProcessingList: list_item found
         DetectingBlock --> ProcessingTable: pipe_table found
-        
-        ProcessingHeader --> DetectingInline: check inline styles
-        ProcessingParagraph --> DetectingInline: check inline styles
-        ProcessingList --> DetectingInline: check inline styles
-        ProcessingTable --> DetectingInline: check inline styles
-        
-        DetectingInline --> BufferingIncomplete: unmatched delimiter
-        DetectingInline --> EmitSegment: style complete
+
+        ProcessingHeading --> DetectingSpans: check inline spans
+        ProcessingParagraph --> DetectingSpans: check inline spans
+        ProcessingList --> DetectingSpans: check inline spans
+        ProcessingTable --> DetectingSpans: check inline spans
+
+        DetectingSpans --> BufferingIncomplete: unmatched delimiter
+        DetectingSpans --> ProcessSpans: spans detected
+        ProcessSpans --> CategorizeSpans: opening/closing/contained
         BufferingIncomplete --> AwaitingToken: wait for more
-        
-        ProcessingCodeBlock --> EmitSegment: extract content
-        EmitSegment --> AwaitingToken: notify subscribers
+
+        ProcessingCodeBlock --> EmitChunk: extract content
+        CategorizeSpans --> EmitChunk: build Chunk with spans
+        EmitChunk --> AwaitingToken: notify subscribers
     }
-    
+
     Parsing --> Flushing: stopParsing()
     Flushing --> Idle: END_STREAM
     Idle --> [*]: removeInstance()

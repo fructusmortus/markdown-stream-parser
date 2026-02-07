@@ -3,6 +3,10 @@
   import {
     MarkdownStreamParser,
     type StreamingChunk,
+    type Chunk,
+    type OpenSpan,
+    type ClosedSpan,
+    type SpanType,
   } from "../../../../src/tree-sitter-markdown-stream-parser.js";
 
   type ExampleFile = { base: string; json: string; txt: string };
@@ -18,7 +22,7 @@
   let txtContent = "";
   let jsonContent = "";
   let parsedSegments: StreamingChunk[] = [];
-  let parsedBlocks: StreamingChunk[][] = [];
+  let parsedBlocks: Chunk[][] = [];
   let currentToken = "";
   let currentParsedChunks: StreamingChunk[] = [];
   let error = "";
@@ -27,6 +31,9 @@
   let parserInitialized = false;
   let parser: MarkdownStreamParser | null = null;
   let parserId: string = "";
+
+  // Track open spans across chunks for styling
+  let openSpans: OpenSpan[] = [];
 
   async function loadExamples() {
     try {
@@ -58,12 +65,54 @@
     resetParser();
   }
 
+  // Get active span types from open spans and chunk spans
+  function getActiveSpanTypes(chunk: Chunk): SpanType[] {
+    const types: SpanType[] = [];
+
+    // Add types from contained spans (fully within this chunk)
+    for (const span of chunk.contained) {
+      if (!types.includes(span.type)) {
+        types.push(span.type);
+      }
+    }
+
+    // Add types from opening spans (start in this chunk)
+    for (const span of chunk.opening) {
+      if (!types.includes(span.type)) {
+        types.push(span.type);
+      }
+    }
+
+    // Add types from currently open spans (opened in previous chunks)
+    for (const span of openSpans) {
+      if (!types.includes(span.type)) {
+        types.push(span.type);
+      }
+    }
+
+    return types;
+  }
+
+  // Update open spans tracking based on chunk
+  function updateOpenSpans(chunk: Chunk) {
+    // Remove closed spans
+    for (const closedSpan of chunk.closing) {
+      openSpans = openSpans.filter(s => s.type !== closedSpan.type);
+    }
+
+    // Add new opening spans
+    for (const openSpan of chunk.opening) {
+      openSpans = [...openSpans, openSpan];
+    }
+  }
+
   async function initializeParser() {
     parsedSegments = [];
     currentToken = "";
     currentParsedChunks = [];
     currentTokenIndex = null;
     error = "";
+    openSpans = [];
 
     parserId = "demo-" + Date.now();
 
@@ -82,10 +131,12 @@
             currentTokenIndex = null;
             currentToken = "";
             parser = null;
+            openSpans = [];
           } else if (parsed.status === "START_STREAM") {
             parsedSegments = [...parsedSegments, parsed];
           } else if (parsed.status === "STREAMING") {
             parsedSegments = [...parsedSegments, parsed];
+            updateOpenSpans(parsed.chunk);
 
             if (streaming || paused) {
               currentParsedChunks = [...currentParsedChunks, parsed];
@@ -211,54 +262,58 @@
     streaming = false;
     paused = false;
     error = "";
+    openSpans = [];
   }
 
+  // Group chunks into blocks based on block type changes
   $: parsedBlocks = (() => {
-    const blocks: StreamingChunk[][] = [];
-    let currentBlock: StreamingChunk[] = [];
+    const blocks: Chunk[][] = [];
+    let currentBlock: Chunk[] = [];
+    let lastBlockType: string | undefined = undefined;
+    let lastBlockLevel: number | undefined = undefined;
+    let lastOffset: number = -1;
 
     for (const seg of parsedSegments) {
       if (seg.status === "START_STREAM" || seg.status === "END_STREAM") {
         continue;
       }
 
-      // Don't split blocks for table cells - keep them together in rows
-      const isTableCell =
-        seg.segment?.type === "table_cell" ||
-        seg.segment?.type === "table_header_cell";
-      const blockId = seg.segment?.blockId;
+      const chunk = seg.chunk;
+      const blockType = chunk.block.type;
+      const blockLevel = chunk.block.level;
 
-      const lastSeg =
-        currentBlock.length > 0 ? currentBlock[currentBlock.length - 1] : null;
-      const prevIsTableCell =
-        lastSeg &&
-        (lastSeg.segment?.type === "table_cell" ||
-          lastSeg.segment?.type === "table_header_cell");
-      const prevBlockId = lastSeg?.segment?.blockId;
+      // Detect new block: type change, or heading level change
+      // For list items, use gap in offset to detect new item
+      let isNewBlock = false;
 
-      // Start a new block if isBlockDefining, but merge cells with same blockId
-      if (seg.segment?.isBlockDefining && currentBlock.length) {
-        let shouldSplit = true;
-
-        // If both are table cells and have the same blockId, keep together
-        if (
-          isTableCell &&
-          prevIsTableCell &&
-          blockId !== undefined &&
-          blockId === prevBlockId
-        ) {
-          shouldSplit = false;
-        }
-
-        if (shouldSplit) {
-          blocks.push(currentBlock);
-          currentBlock = [];
+      if (blockType !== lastBlockType) {
+        isNewBlock = true;
+      } else if (blockType === 'heading' && blockLevel !== lastBlockLevel) {
+        isNewBlock = true;
+      } else if (blockType === 'list_item' && lastOffset >= 0) {
+        // New list item if there's a significant gap in offset (indicates newline/new item)
+        // Or if the text starts after a newline marker
+        const gap = chunk.offset - lastOffset;
+        if (gap > 50) { // Heuristic: large gap suggests new list item
+          isNewBlock = true;
         }
       }
-      currentBlock.push(seg);
+
+      if (isNewBlock && currentBlock.length > 0) {
+        blocks.push(currentBlock);
+        currentBlock = [];
+      }
+
+      currentBlock.push(chunk);
+      lastBlockType = blockType;
+      lastBlockLevel = blockLevel;
+      lastOffset = chunk.offset + chunk.length;
     }
 
-    if (currentBlock.length) blocks.push(currentBlock);
+    if (currentBlock.length > 0) {
+      blocks.push(currentBlock);
+    }
+
     return blocks;
   })();
 
@@ -297,6 +352,30 @@
     } else {
       jsonItems = [];
     }
+  }
+
+  // Helper function to determine CSS classes for text based on active spans
+  function getSpanClasses(styles: SpanType[]): string {
+    const classes: string[] = [];
+
+    if (styles.includes('bold') && styles.includes('italic')) {
+      classes.push('font-bold', 'italic');
+    } else if (styles.includes('bold')) {
+      classes.push('font-bold');
+    } else if (styles.includes('italic')) {
+      classes.push('italic');
+    }
+
+    if (styles.includes('strikethrough')) {
+      classes.push('line-through');
+    }
+
+    return classes.join(' ');
+  }
+
+  // Check if style includes code
+  function hasCodeStyle(styles: SpanType[]): boolean {
+    return styles.includes('code');
   }
 </script>
 
@@ -394,352 +473,143 @@
       <h2 class="font-bold mb-2 text-lg">Parsed Stream</h2>
       <div class="flex-1 overflow-auto space-y-2">
         {#each parsedBlocks as block}
-          {@const hasTableCells = block.some(
-            (seg) =>
-              seg.segment?.type === "table_cell" ||
-              seg.segment?.type === "table_header_cell",
-          )}
+          {@const blockType = block[0]?.block.type}
+          {@const blockLevel = block[0]?.block.level}
+          {@const blockLanguage = block[0]?.block.language}
+          {@const hasTableCells = blockType === 'table_cell' || blockType === 'table_row'}
+
           <div class="my-1 {hasTableCells ? 'flex flex-wrap gap-0' : ''}">
-            {#each block as seg}
-              {#if seg.segment?.type === "header"}
-                {#if seg.segment?.level === 1}
-                  <h1 class="inline text-2xl font-bold">
-                    {#if seg.segment?.styles?.length}
-                      <span
-                        class={seg.segment.styles.includes("bold") &&
-                        seg.segment.styles.includes("italic")
-                          ? "font-bold italic"
-                          : seg.segment.styles.includes("bold")
-                            ? "font-bold"
-                            : seg.segment.styles.includes("italic")
-                              ? "italic"
-                              : ""}
-                      >
-                        {#if seg.segment.styles.includes("strikethrough")}
-                          <span class="line-through"
-                            >{seg.segment?.segment}</span
-                          >
-                        {:else if seg.segment.styles.includes("code")}
-                          <code
-                            class="bg-gray-200 rounded px-1 text-sm font-mono"
-                            >{seg.segment?.segment}</code
-                          >
-                        {:else}
-                          {seg.segment?.segment}
-                        {/if}
-                      </span>
+            {#if blockType === 'heading'}
+              {#if blockLevel === 1}
+                <h1 class="inline text-2xl font-bold">
+                  {#each block as chunk}
+                    {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                    {#if hasCodeStyle(styles)}
+                      <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
                     {:else}
-                      {seg.segment?.segment}
+                      <span class={getSpanClasses(styles)}>{chunk.text}</span>
                     {/if}
-                  </h1>
-                {:else if seg.segment?.level === 2}
-                  <h2 class="inline text-xl font-bold">
-                    {#if seg.segment?.styles?.length}
-                      <span
-                        class={seg.segment.styles.includes("bold") &&
-                        seg.segment.styles.includes("italic")
-                          ? "font-bold italic"
-                          : seg.segment.styles.includes("bold")
-                            ? "font-bold"
-                            : seg.segment.styles.includes("italic")
-                              ? "italic"
-                              : ""}
-                      >
-                        {#if seg.segment.styles.includes("strikethrough")}
-                          <span class="line-through"
-                            >{seg.segment?.segment}</span
-                          >
-                        {:else if seg.segment.styles.includes("code")}
-                          <code
-                            class="bg-gray-200 rounded px-1 text-sm font-mono"
-                            >{seg.segment?.segment}</code
-                          >
-                        {:else}
-                          {seg.segment?.segment}
-                        {/if}
-                      </span>
+                  {/each}
+                </h1>
+              {:else if blockLevel === 2}
+                <h2 class="inline text-xl font-bold">
+                  {#each block as chunk}
+                    {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                    {#if hasCodeStyle(styles)}
+                      <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
                     {:else}
-                      {seg.segment?.segment}
+                      <span class={getSpanClasses(styles)}>{chunk.text}</span>
                     {/if}
-                  </h2>
-                {:else if seg.segment?.level === 3}
-                  <h3 class="inline text-lg font-semibold">
-                    {#if seg.segment?.styles?.length}
-                      <span
-                        class={seg.segment.styles.includes("bold") &&
-                        seg.segment.styles.includes("italic")
-                          ? "font-bold italic"
-                          : seg.segment.styles.includes("bold")
-                            ? "font-bold"
-                            : seg.segment.styles.includes("italic")
-                              ? "italic"
-                              : ""}
-                      >
-                        {#if seg.segment.styles.includes("strikethrough")}
-                          <span class="line-through"
-                            >{seg.segment?.segment}</span
-                          >
-                        {:else if seg.segment.styles.includes("code")}
-                          <code
-                            class="bg-gray-200 rounded px-1 text-sm font-mono"
-                            >{seg.segment?.segment}</code
-                          >
-                        {:else}
-                          {seg.segment?.segment}
-                        {/if}
-                      </span>
+                  {/each}
+                </h2>
+              {:else if blockLevel === 3}
+                <h3 class="inline text-lg font-semibold">
+                  {#each block as chunk}
+                    {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                    {#if hasCodeStyle(styles)}
+                      <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
                     {:else}
-                      {seg.segment?.segment}
+                      <span class={getSpanClasses(styles)}>{chunk.text}</span>
                     {/if}
-                  </h3>
-                {:else if seg.segment?.level === 4}
-                  <h4 class="inline text-base font-semibold">
-                    {#if seg.segment?.styles?.length}
-                      <span
-                        class={seg.segment.styles.includes("bold") &&
-                        seg.segment.styles.includes("italic")
-                          ? "font-bold italic"
-                          : seg.segment.styles.includes("bold")
-                            ? "font-bold"
-                            : seg.segment.styles.includes("italic")
-                              ? "italic"
-                              : ""}
-                      >
-                        {#if seg.segment.styles.includes("strikethrough")}
-                          <span class="line-through"
-                            >{seg.segment?.segment}</span
-                          >
-                        {:else if seg.segment.styles.includes("code")}
-                          <code
-                            class="bg-gray-200 rounded px-1 text-sm font-mono"
-                            >{seg.segment?.segment}</code
-                          >
-                        {:else}
-                          {seg.segment?.segment}
-                        {/if}
-                      </span>
+                  {/each}
+                </h3>
+              {:else if blockLevel === 4}
+                <h4 class="inline text-base font-semibold">
+                  {#each block as chunk}
+                    {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                    {#if hasCodeStyle(styles)}
+                      <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
                     {:else}
-                      {seg.segment?.segment}
+                      <span class={getSpanClasses(styles)}>{chunk.text}</span>
                     {/if}
-                  </h4>
-                {:else if seg.segment?.level === 5}
-                  <h5 class="inline text-sm font-semibold">
-                    {#if seg.segment?.styles?.length}
-                      <span
-                        class={seg.segment.styles.includes("bold") &&
-                        seg.segment.styles.includes("italic")
-                          ? "font-bold italic"
-                          : seg.segment.styles.includes("bold")
-                            ? "font-bold"
-                            : seg.segment.styles.includes("italic")
-                              ? "italic"
-                              : ""}
-                      >
-                        {#if seg.segment.styles.includes("strikethrough")}
-                          <span class="line-through"
-                            >{seg.segment?.segment}</span
-                          >
-                        {:else if seg.segment.styles.includes("code")}
-                          <code
-                            class="bg-gray-200 rounded px-1 text-sm font-mono"
-                            >{seg.segment?.segment}</code
-                          >
-                        {:else}
-                          {seg.segment?.segment}
-                        {/if}
-                      </span>
+                  {/each}
+                </h4>
+              {:else if blockLevel === 5}
+                <h5 class="inline text-sm font-semibold">
+                  {#each block as chunk}
+                    {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                    {#if hasCodeStyle(styles)}
+                      <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
                     {:else}
-                      {seg.segment?.segment}
+                      <span class={getSpanClasses(styles)}>{chunk.text}</span>
                     {/if}
-                  </h5>
-                {:else if seg.segment?.level === 6}
-                  <h6 class="inline text-xs font-semibold">
-                    {#if seg.segment?.styles?.length}
-                      <span
-                        class={seg.segment.styles.includes("bold") &&
-                        seg.segment.styles.includes("italic")
-                          ? "font-bold italic"
-                          : seg.segment.styles.includes("bold")
-                            ? "font-bold"
-                            : seg.segment.styles.includes("italic")
-                              ? "italic"
-                              : ""}
-                      >
-                        {#if seg.segment.styles.includes("strikethrough")}
-                          <span class="line-through"
-                            >{seg.segment?.segment}</span
-                          >
-                        {:else if seg.segment.styles.includes("code")}
-                          <code
-                            class="bg-gray-200 rounded px-1 text-sm font-mono"
-                            >{seg.segment?.segment}</code
-                          >
-                        {:else}
-                          {seg.segment?.segment}
-                        {/if}
-                      </span>
+                  {/each}
+                </h5>
+              {:else if blockLevel === 6}
+                <h6 class="inline text-xs font-semibold">
+                  {#each block as chunk}
+                    {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                    {#if hasCodeStyle(styles)}
+                      <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
                     {:else}
-                      {seg.segment?.segment}
+                      <span class={getSpanClasses(styles)}>{chunk.text}</span>
                     {/if}
-                  </h6>
-                {:else}
-                  <span class="inline font-semibold">
-                    {#if seg.segment?.styles?.length}
-                      <span
-                        class={seg.segment.styles.includes("bold") &&
-                        seg.segment.styles.includes("italic")
-                          ? "font-bold italic"
-                          : seg.segment.styles.includes("bold")
-                            ? "font-bold"
-                            : seg.segment.styles.includes("italic")
-                              ? "italic"
-                              : ""}
-                      >
-                        {#if seg.segment.styles.includes("strikethrough")}
-                          <span class="line-through"
-                            >{seg.segment?.segment}</span
-                          >
-                        {:else if seg.segment.styles.includes("code")}
-                          <code
-                            class="bg-gray-200 rounded px-1 text-sm font-mono"
-                            >{seg.segment?.segment}</code
-                          >
-                        {:else}
-                          {seg.segment?.segment}
-                        {/if}
-                      </span>
-                    {:else}
-                      {seg.segment?.segment}
-                    {/if}
-                  </span>
-                {/if}
-              {:else if seg.segment?.type === "codeBlock"}
-                <pre
-                  class="inline bg-gray-100 rounded p-1 font-mono text-sm text-gray-800 overflow-x-auto align-middle"><code
-                    >{seg.segment?.segment}</code
-                  ></pre>
-              {:else if seg.segment?.type === "blockQuote"}
-                <span
-                  class="inline border-l-4 border-blue-400 pl-2 italic text-gray-700"
-                  >{seg.segment?.segment}</span
-                >
-              {:else if seg.segment?.type === "list_item"}
-                <span class="inline text-base leading-relaxed">
-                  {#if seg.segment?.isBlockDefining}
-                    <span class="mr-1">•</span>
-                  {/if}
-                  {#if seg.segment?.styles?.length}
-                    <span
-                      class={seg.segment.styles.includes("bold") &&
-                      seg.segment.styles.includes("italic")
-                        ? "font-bold italic"
-                        : seg.segment.styles.includes("bold")
-                          ? "font-bold"
-                          : seg.segment.styles.includes("italic")
-                            ? "italic"
-                            : ""}
-                    >
-                      {#if seg.segment.styles.includes("strikethrough")}
-                        <span class="line-through">{seg.segment?.segment}</span>
-                      {:else if seg.segment.styles.includes("code")}
-                        <code class="bg-gray-200 rounded px-1 text-sm font-mono"
-                          >{seg.segment?.segment}</code
-                        >
-                      {:else}
-                        {seg.segment?.segment}
-                      {/if}
-                    </span>
-                  {:else}
-                    {seg.segment?.segment}
-                  {/if}
-                </span>
-              {:else if seg.segment?.type === "table_header_cell"}
-                <span
-                  class="inline-block border border-gray-300 px-2 py-1 bg-gray-100 font-semibold text-sm"
-                >
-                  {#if seg.segment?.styles?.length}
-                    <span
-                      class={seg.segment.styles.includes("bold") &&
-                      seg.segment.styles.includes("italic")
-                        ? "font-bold italic"
-                        : seg.segment.styles.includes("bold")
-                          ? "font-bold"
-                          : seg.segment.styles.includes("italic")
-                            ? "italic"
-                            : ""}
-                    >
-                      {#if seg.segment.styles.includes("strikethrough")}
-                        <span class="line-through">{seg.segment?.segment}</span>
-                      {:else if seg.segment.styles.includes("code")}
-                        <code class="bg-gray-200 rounded px-1 text-sm font-mono"
-                          >{seg.segment?.segment}</code
-                        >
-                      {:else}
-                        {seg.segment?.segment}
-                      {/if}
-                    </span>
-                  {:else}
-                    {seg.segment?.segment}
-                  {/if}
-                </span>
-              {:else if seg.segment?.type === "table_cell"}
-                <span
-                  class="inline-block border border-gray-300 px-2 py-1 text-sm"
-                >
-                  {#if seg.segment?.styles?.length}
-                    <span
-                      class={seg.segment.styles.includes("bold") &&
-                      seg.segment.styles.includes("italic")
-                        ? "font-bold italic"
-                        : seg.segment.styles.includes("bold")
-                          ? "font-bold"
-                          : seg.segment.styles.includes("italic")
-                            ? "italic"
-                            : ""}
-                    >
-                      {#if seg.segment.styles.includes("strikethrough")}
-                        <span class="line-through">{seg.segment?.segment}</span>
-                      {:else if seg.segment.styles.includes("code")}
-                        <code class="bg-gray-200 rounded px-1 text-sm font-mono"
-                          >{seg.segment?.segment}</code
-                        >
-                      {:else}
-                        {seg.segment?.segment}
-                      {/if}
-                    </span>
-                  {:else}
-                    {seg.segment?.segment}
-                  {/if}
-                </span>
+                  {/each}
+                </h6>
               {:else}
-                <span class="inline text-base leading-relaxed">
-                  {#if seg.segment?.styles?.length}
-                    <span
-                      class={seg.segment.styles.includes("bold") &&
-                      seg.segment.styles.includes("italic")
-                        ? "font-bold italic"
-                        : seg.segment.styles.includes("bold")
-                          ? "font-bold"
-                          : seg.segment.styles.includes("italic")
-                            ? "italic"
-                            : ""}
-                    >
-                      {#if seg.segment.styles.includes("strikethrough")}
-                        <span class="line-through">{seg.segment?.segment}</span>
-                      {:else if seg.segment.styles.includes("code")}
-                        <code class="bg-gray-200 rounded px-1 text-sm font-mono"
-                          >{seg.segment?.segment}</code
-                        >
-                      {:else}
-                        {seg.segment?.segment}
-                      {/if}
-                    </span>
-                  {:else}
-                    {seg.segment?.segment}
-                  {/if}
+                <span class="inline font-semibold">
+                  {#each block as chunk}
+                    {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                    {#if hasCodeStyle(styles)}
+                      <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
+                    {:else}
+                      <span class={getSpanClasses(styles)}>{chunk.text}</span>
+                    {/if}
+                  {/each}
                 </span>
               {/if}
-            {/each}
+            {:else if blockType === 'code_block'}
+              <pre class="inline bg-gray-100 rounded p-1 font-mono text-sm text-gray-800 overflow-x-auto align-middle"><code>{#each block as chunk}{chunk.text}{/each}</code></pre>
+              {#if blockLanguage}
+                <span class="text-xs text-gray-500 ml-2">{blockLanguage}</span>
+              {/if}
+            {:else if blockType === 'blockquote'}
+              <span class="inline border-l-4 border-blue-400 pl-2 italic text-gray-700">
+                {#each block as chunk}
+                  {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                  {#if hasCodeStyle(styles)}
+                    <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
+                  {:else}
+                    <span class={getSpanClasses(styles)}>{chunk.text}</span>
+                  {/if}
+                {/each}
+              </span>
+            {:else if blockType === 'list_item'}
+              <span class="inline text-base leading-relaxed">
+                <span class="mr-1">•</span>
+                {#each block as chunk}
+                  {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                  {#if hasCodeStyle(styles)}
+                    <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
+                  {:else}
+                    <span class={getSpanClasses(styles)}>{chunk.text}</span>
+                  {/if}
+                {/each}
+              </span>
+            {:else if blockType === 'table_cell' || blockType === 'table_row'}
+              {#each block as chunk}
+                {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                <span class="inline-block border border-gray-300 px-2 py-1 text-sm">
+                  {#if hasCodeStyle(styles)}
+                    <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
+                  {:else}
+                    <span class={getSpanClasses(styles)}>{chunk.text}</span>
+                  {/if}
+                </span>
+              {/each}
+            {:else}
+              <!-- Default paragraph rendering -->
+              <span class="inline text-base leading-relaxed">
+                {#each block as chunk}
+                  {@const styles = [...chunk.contained.map(s => s.type), ...chunk.opening.map(s => s.type)]}
+                  {#if hasCodeStyle(styles)}
+                    <code class="bg-gray-200 rounded px-1 text-sm font-mono">{chunk.text}</code>
+                  {:else}
+                    <span class={getSpanClasses(styles)}>{chunk.text}</span>
+                  {/if}
+                {/each}
+              </span>
+            {/if}
           </div>
         {/each}
       </div>

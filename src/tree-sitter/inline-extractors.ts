@@ -1,18 +1,25 @@
 import type { Parser } from 'web-tree-sitter'
-import type { StreamingChunk, BlockInfo, InlineStyleConfig, INLINE_STYLE_CONFIGS } from './types.js'
+import type { StreamingChunk, BlockInfo, InlineStyleConfig, SpanType, ClosedSpan } from './types.js'
 import { findInlineNodeAtPosition } from './tree-navigation.js'
-import { createChunkFromBlockInfo } from './segment-builder.js'
+import { createChunkFromBlockInfo, createClosedSpan, byteOffsetToUtf16 } from './segment-builder.js'
+
+// NOTE: These legacy extractors are kept for backward compatibility but are
+// no longer used by the main segment generator. The new API uses processInlineSpans()
+// in segment-generator.ts which handles spans using the opening/closing/contained model.
+//
+// These functions will be deprecated in a future version.
 
 // Generic inline style segment extractor.
 // Extracts segments with proper prefix/content/suffix handling for any inline style.
+// DEPRECATED: Use processInlineSpans() in segment-generator.ts instead.
 function extractInlineStyleSegments(
     config: InlineStyleConfig,
     startByte: number,
     endByte: number,
-    baseStyles: string[],
     blockInfo: BlockInfo,
     currentTree: Parser.Tree,
     inlineParser: Parser,
+    currentUtf16Offset: number = 0,
     useDescendants: boolean = false
 ): StreamingChunk[] {
     const segments: StreamingChunk[] = []
@@ -31,6 +38,7 @@ function extractInlineStyleSegments(
     const relativeEnd = endByte - inlineNode.startIndex
 
     const styleNodes = inlineTree.rootNode.descendantsOfType(config.nodeType)
+    let offset = currentUtf16Offset
 
     // Check if any style node actually overlaps with our range
     for (const styleNode of styleNodes) {
@@ -68,13 +76,8 @@ function extractInlineStyleSegments(
                     if (intersectionStart < intersectionEnd) {
                         const prefixText = inlineContent.substring(intersectionStart, intersectionEnd)
                         if (prefixText) {
-                            segments.push(createChunkFromBlockInfo(
-                                prefixText,
-                                baseStyles.filter(s => s !== config.styleName),
-                                blockInfo,
-                                false,
-                                prefixText.includes('\n')
-                            ))
+                            segments.push(createChunkFromBlockInfo(prefixText, offset, blockInfo))
+                            offset += prefixText.length
                         }
                     }
                 }
@@ -86,19 +89,14 @@ function extractInlineStyleSegments(
                 if (contentOverlapStart < contentOverlapEnd) {
                     const styledText = inlineContent.substring(contentOverlapStart, contentOverlapEnd)
                     if (styledText) {
-                        // Ensure the style is present
-                        const styledStyles = [...baseStyles]
-                        if (styledStyles.indexOf(config.styleName) === -1) {
-                            styledStyles.push(config.styleName)
-                        }
+                        // Create a contained span for this style
+                        const spanType = config.styleName as 'bold' | 'italic' | 'code' | 'strikethrough'
+                        const containedSpan: ClosedSpan = createClosedSpan(spanType, offset, styledText.length)
 
-                        segments.push(createChunkFromBlockInfo(
-                            styledText,
-                            styledStyles,
-                            blockInfo,
-                            false,
-                            styledText.includes('\n')
-                        ))
+                        segments.push(createChunkFromBlockInfo(styledText, offset, blockInfo, {
+                            contained: [containedSpan]
+                        }))
+                        offset += styledText.length
                     }
                 }
 
@@ -110,13 +108,8 @@ function extractInlineStyleSegments(
                     if (suffixStart < suffixEnd) {
                         const suffixText = inlineContent.substring(suffixStart, suffixEnd)
                         if (suffixText) {
-                            segments.push(createChunkFromBlockInfo(
-                                suffixText,
-                                baseStyles.filter(s => s !== config.styleName),
-                                blockInfo,
-                                false,
-                                suffixText.includes('\n')
-                            ))
+                            segments.push(createChunkFromBlockInfo(suffixText, offset, blockInfo))
+                            offset += suffixText.length
                         }
                     }
                 }
@@ -130,15 +123,16 @@ function extractInlineStyleSegments(
 }
 
 // Extract inline code segments, stripping backtick delimiters.
+// DEPRECATED: Use processInlineSpans() in segment-generator.ts instead.
 export function getInlineCodeSegments(
     content: string,
     node: Parser.SyntaxNode,
     startByte: number,
     endByte: number,
-    baseStyles: string[],
     blockInfo: BlockInfo,
     currentTree: Parser.Tree,
-    inlineParser: Parser
+    inlineParser: Parser,
+    currentUtf16Offset: number = 0
 ): StreamingChunk[] {
     const config: InlineStyleConfig = {
         styleName: 'code',
@@ -148,21 +142,22 @@ export function getInlineCodeSegments(
     }
 
     return extractInlineStyleSegments(
-        config, startByte, endByte, baseStyles, blockInfo,
-        currentTree, inlineParser, false
+        config, startByte, endByte, blockInfo,
+        currentTree, inlineParser, currentUtf16Offset, false
     )
 }
 
 // Extract bold segments, stripping ** delimiters.
+// DEPRECATED: Use processInlineSpans() in segment-generator.ts instead.
 export function getBoldSegments(
     content: string,
     node: Parser.SyntaxNode,
     startByte: number,
     endByte: number,
-    baseStyles: string[],
     blockInfo: BlockInfo,
     currentTree: Parser.Tree,
-    inlineParser: Parser
+    inlineParser: Parser,
+    currentUtf16Offset: number = 0
 ): StreamingChunk[] {
     const config: InlineStyleConfig = {
         styleName: 'bold',
@@ -172,21 +167,22 @@ export function getBoldSegments(
     }
 
     return extractInlineStyleSegments(
-        config, startByte, endByte, baseStyles, blockInfo,
-        currentTree, inlineParser, false
+        config, startByte, endByte, blockInfo,
+        currentTree, inlineParser, currentUtf16Offset, false
     )
 }
 
 // Extract italic segments, stripping * or _ delimiters.
+// DEPRECATED: Use processInlineSpans() in segment-generator.ts instead.
 export function getItalicSegments(
     content: string,
     node: Parser.SyntaxNode,
     startByte: number,
     endByte: number,
-    baseStyles: string[],
     blockInfo: BlockInfo,
     currentTree: Parser.Tree,
-    inlineParser: Parser
+    inlineParser: Parser,
+    currentUtf16Offset: number = 0
 ): StreamingChunk[] {
     const config: InlineStyleConfig = {
         styleName: 'italic',
@@ -196,21 +192,22 @@ export function getItalicSegments(
     }
 
     return extractInlineStyleSegments(
-        config, startByte, endByte, baseStyles, blockInfo,
-        currentTree, inlineParser, false
+        config, startByte, endByte, blockInfo,
+        currentTree, inlineParser, currentUtf16Offset, false
     )
 }
 
 // Extract strikethrough segments, stripping ~~ delimiters.
+// DEPRECATED: Use processInlineSpans() in segment-generator.ts instead.
 export function getStrikethroughSegments(
     content: string,
     node: Parser.SyntaxNode,
     startByte: number,
     endByte: number,
-    baseStyles: string[],
     blockInfo: BlockInfo,
     currentTree: Parser.Tree,
-    inlineParser: Parser
+    inlineParser: Parser,
+    currentUtf16Offset: number = 0
 ): StreamingChunk[] {
     const config: InlineStyleConfig = {
         styleName: 'strikethrough',
@@ -221,7 +218,7 @@ export function getStrikethroughSegments(
 
     // Strikethrough uses descendants for delimiters (they can be nested)
     return extractInlineStyleSegments(
-        config, startByte, endByte, baseStyles, blockInfo,
-        currentTree, inlineParser, true
+        config, startByte, endByte, blockInfo,
+        currentTree, inlineParser, currentUtf16Offset, true
     )
 }
