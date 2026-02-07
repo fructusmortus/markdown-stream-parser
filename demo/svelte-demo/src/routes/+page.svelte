@@ -393,8 +393,8 @@
       !!! Please keep that in mind...
     </h2>
     <h3 class="mb-5">
-      This <b>demo is entirely `vibe-coded`</b>, while
-      <b>the parser is painstakingly created by a human being 👩‍💻 :)</b>
+      This <b>parser setup example is just an AI slop</b>, its only goal is to visually showcase the parser.
+      <b>pls refer to the readme file for better instruction on how to user parser API</b>
     </h3>
   </div>
   <label class="block text-sm font-medium mb-1">Select LLM Example</label>

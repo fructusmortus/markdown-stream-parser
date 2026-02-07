@@ -45,8 +45,8 @@ Can be used on a backend or frontend, there's no rendering logic involved.
 
 ### Basic Concepts
 
-- **Singleton Pattern:**
-  Use `MarkdownStreamParser.getInstance(instanceId)` to ensure one parser per logical stream/session.
+- **Singleton Pattern (async):**
+  Use `await MarkdownStreamParser.getInstance(instanceId)` to ensure one parser per logical stream/session. The first call loads the tree-sitter WASM grammars, so `getInstance()` returns a `Promise`.
 
 - **Parsing Lifecycle:**
   - `startParsing()`: Begin parsing and set up subscriptions.
@@ -54,8 +54,7 @@ Can be used on a backend or frontend, there's no rendering logic involved.
   - `stopParsing()`: Flush buffers, reset state, and notify listeners of stream end.
 
 - **Subscribing to Output:**
-  Use `subscribeToTokenParse(listener)` to receive parsed segments as soon as they are available. Returns an unsubscribe function.
-  The unsubscribe function takes no arguments.
+  Use `subscribeToTokenParse(listener)` to receive parsed chunks as soon as they are available. The listener receives a `StreamingChunk` and an `unsubscribe` function. Returns an unsubscribe function.
 
 
 ## How to Use
@@ -64,7 +63,7 @@ There are several ways to use the parser. It is quite modular. You can initializ
 
 ## Subscribing to the Parser
 
-Before you can parse the stream, you must subscribe to the parser. If you do not subscribe in advance, the parser will likely stop and terminate before you receive the first segment.
+Before you can parse the stream, you must subscribe to the parser. If you do not subscribe in advance, the parser will likely stop and terminate before you receive the first chunk.
 
 First import the parser and initialize it with an `instance-id`. (you can have as many parallel parsers as you want, just make sure to use different `instance-id`s)
 
@@ -72,18 +71,19 @@ First import the parser and initialize it with an `instance-id`. (you can have a
 import { MarkdownStreamParser } from '@lixpi/markdown-stream-parser'
 
 // Get a parser instance (singleton per ID)
-const parser = MarkdownStreamParser.getInstance('session-1')
+// First call loads WASM grammars — subsequent calls for the same ID return instantly
+const parser = await MarkdownStreamParser.getInstance('session-1')
 ```
 
 #### Approach 1: The Simplest
 
 ```typescript
 // Subscribe to parsed output
-parser.subscribeToTokenParse((parsedSegment, unsubscribe) => {
-    console.log(parsedSegment) // Happy little parsed segment
+parser.subscribeToTokenParse((streamingChunk, unsubscribe) => {
+    console.log(streamingChunk) // Happy little parsed chunk
 
     // Clean up when the stream ends
-    if (parsedSegment.status === 'END_STREAM') {
+    if (streamingChunk.status === 'END_STREAM') {
         unsubscribe()
         MarkdownStreamParser.removeInstance('session-1')
     }
@@ -93,16 +93,16 @@ parser.subscribeToTokenParse((parsedSegment, unsubscribe) => {
 #### Approach 2: Customizable
 
 ```typescript
-// Subscribe to the parser service
-const parserUnsubscribe = parser.subscribeToTokenParse(parsedSegment => {
-    console.log(parsedSegment) // Happy little parsed segment
+// Subscribe to the parser
+const parserUnsubscribe = parser.subscribeToTokenParse((streamingChunk) => {
+    console.log(streamingChunk) // Happy little parsed chunk
 })
 
 // When the stream has ended stop the parser to avoid issues and memory leaks.
 // You can decide when to terminate the parser.
 // For example, using your own logic or rely on the `parser.parsing` flag.
 if (!parser.parsing) {
-    parserUnsubscribe()    // Unsubscribe from the parser service
+    parserUnsubscribe()    // Unsubscribe from the parser
     MarkdownStreamParser.removeInstance('session-1')    // Dispose of the parser instance
 }
 ```
@@ -118,7 +118,7 @@ Again, this can be done in the same file or in a different part of your applicat
 import { MarkdownStreamParser } from '@lixpi/markdown-stream-parser'
 
 // Get a parser instance (singleton per ID)
-const parser = MarkdownStreamParser.getInstance('session-1')
+const parser = await MarkdownStreamParser.getInstance('session-1')
 
 // Start the parser
 parser.startParsing()
@@ -177,26 +177,28 @@ The output is a series of `StreamingChunk` objects. Each chunk contains the text
 { status: 'END_STREAM' }
 ```
 
-### Key Concepts in the New API
+### Key Concepts
 
+- **`text`**: Plain text with markdown formatting syntax removed
 - **`offset`**: UTF-16 code unit offset from the start of the stream
 - **`length`**: UTF-16 code unit length of the text
-- **`block`**: Block-level context (`paragraph`, `heading`, `code_block`, `list_item`, `table`, etc.)
+- **`block`**: Block-level context (`paragraph`, `heading`, `code_block`, `list_item`, `table`, `blockquote`, etc.)
 - **`opening`**: Spans that start in this chunk but don't close (span continues to next chunks)
 - **`closing`**: Spans that close in this chunk (were opened in earlier chunks)
 - **`contained`**: Spans fully contained within this chunk
+- **`backtrackOffset`**: If present, the parser corrected previous output — discard everything from this offset onwards
 
 
 ## Consumer Span State Management
 
-The new API uses an **orthogonal model** where chunks and spans are completely independent. Spans can cross chunk boundaries. Consumers must track open spans to properly render styled content.
+The API uses an **orthogonal model** where chunks and spans are completely independent. Spans can cross chunk boundaries. Consumers must track open spans to properly render styled content.
 
 ### How to Track Span State
 
 ```typescript
 import { MarkdownStreamParser, OpenSpan, ClosedSpan, Chunk } from '@lixpi/markdown-stream-parser'
 
-const parser = MarkdownStreamParser.getInstance('session-1')
+const parser = await MarkdownStreamParser.getInstance('session-1')
 
 // Track currently open spans
 let openSpans: OpenSpan[] = []
@@ -251,17 +253,22 @@ parser.subscribeToTokenParse((streamingChunk, unsubscribe) => {
 ### Span Types
 
 ```typescript
-type SpanType = 'bold' | 'italic' | 'code' | 'strikethrough' | 'link' | 'image'
+// The base Span is a discriminated union — links carry URLs, images carry src/alt
+type Span =
+    | { type: 'bold' }
+    | { type: 'italic' }
+    | { type: 'code' }
+    | { type: 'strikethrough' }
+    | { type: 'link'; url: string }
+    | { type: 'image'; src: string; alt?: string }
+
+type SpanType = Span['type']  // 'bold' | 'italic' | 'code' | 'strikethrough' | 'link' | 'image'
 
 // Opening span: we know where it starts, but it's not closed yet
 type OpenSpan = { type: SpanType; openOffset: number }
 
-// Closed/contained span: complete with offset and length
+// Closed/contained span: full span data + position info
 type ClosedSpan = Span & { offset: number; length: number }
-
-// Link and image spans include additional metadata
-type LinkSpan = { type: 'link'; url: string; offset: number; length: number }
-type ImageSpan = { type: 'image'; src: string; alt?: string; offset: number; length: number }
 ```
 
 ### Handling Backtracking
@@ -286,21 +293,30 @@ if (chunk.backtrackOffset !== undefined) {
 ### Configuration Options
 
 ```typescript
-const parser = MarkdownStreamParser.getInstance('session-1', {
-    windowSize: 500,              // Lookback window for backtrack detection (chars)
-    includeRawStreamedToken: true // Include original token in chunk.original
+// Optional: configure WASM grammar paths before creating any instance
+// (only needed if you host the .wasm files at a non-default location)
+MarkdownStreamParser.configureWasmPath('/custom/path/tree-sitter-markdown.wasm')
+
+const parser = await MarkdownStreamParser.getInstance('session-1', {
+    windowSize: 500,              // Lookback window for backtrack detection (UTF-16 code units)
+    includeRawStreamedToken: true // Include original markdown source in chunk.original
 })
 
 // Or configure after creation
 parser.setConfig({ windowSize: 1000 })
 ```
 
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `windowSize` | `number` | `undefined` (unlimited) | Maximum backtrack distance in UTF-16 code units. Limits how far back the parser can correct previous output. |
+| `includeRawStreamedToken` | `boolean` | `false` | When `true`, each chunk includes the original markdown source in `chunk.original`. Useful as a fallback for unsupported formatting. |
+
 
 ## Is that it? What am I supposed to do with that?
 
-Good question. You can use this stream to render styled content in your application in real time. Having a `segment type` and `inline styles` is enough to style it however you want.
+Good question. You can use this stream to render styled content in your application in real time. Having a `block type` and `span information` is enough to style it however you want.
 
-It will **always remain `render-agnostic`** - whatever you use to render your styled text is entirely up to you.
+It will **always remain `render-agnostic`** — whatever you use to render your styled text is entirely up to you.
 
 
 ## Features
@@ -314,8 +330,8 @@ It will **always remain `render-agnostic`** - whatever you use to render your st
   - [x] Inline Strikethrough (`~~text~~`)
   - [x] Inline Code (`` `code` ``)
 - [x] Code Blocks (```` ```code-block``` ````) with language detection
-- [x] Links (`[text](url)`) - with URL extraction
-- [x] Images (`![alt](url)`) - with src and alt extraction
+- [x] Links (`[text](url)`) — with URL extraction *(no test coverage yet)*
+- [x] Images (`![alt](url)`) — with src and alt extraction *(no test coverage yet)*
 - [ ] Blockquotes (`> quote`) [Issue #2](https://github.com/Lixpi/markdown-stream-parser/issues/2)
 - [ ] //TODO: PRIORITY: Ordered Lists (`1. item`) [Issue #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
 - [ ] //TODO: PRIORITY: Unordered Lists (`- item`, `* item`, `+ item`) *BLOCKED BY:* [Issue #3](https://github.com/Lixpi/markdown-stream-parser/issues/3)
@@ -333,7 +349,7 @@ It will **always remain `render-agnostic`** - whatever you use to render your st
 
 ## Running examples
 
-To try out the parser with example streams, look inside the `llm-streams-examples` directory. This folder contains real LLM responses collected from various providers. Each response has two versions:
+To try out the parser with example streams, look inside the `demo/llm-streams-examples` directory. This folder contains real LLM responses collected from various providers. Each response has two versions:
 
 - `*.json`: An array of items used for streaming
 - `*.txt`: The same stream combined into a single file
@@ -348,16 +364,18 @@ Inside the repository root dir run:
    docker compose up -d
    ```
 
-2. Run the debug parser inside the container:
+2. Run the tree-sitter debug parser inside the container:
    ```bash
-   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser --file=<file-path>
+   docker exec -it lixpi-markdown-stream-parser-demo pnpm run debug-parser-tree-sitter --file=<file-path>
    ```
 
    Replace `<file-path>` with the relative path to any `.json` file. Examples:
-   - For files in `llm-streams-examples`: `--file=demo/llm-streams-examples/claude-3.5-1-quantum-physics.json`
-   - For manually created files: `--file=demo/llm-stream-examples-manually-simulated/long-consecutive-sequence.json`
+   - `--file=demo/llm-streams-examples/claude-3.5-1-quantum-physics.json`
+   - `--file=demo/llm-stream-examples-manually-simulated/long-consecutive-sequence.json`
 
-3. **Creating custom test streams**: You can also create your own chunked streams from arbitrary text files using the `split-sample-into-chunks.ts` script:
+   > There's also `debug-parser` which runs the legacy state-machine parser for comparison.
+
+3. **Creating custom test streams**: You can also create your own chunked streams from arbitrary text files using the `split-sample-into-chunks` script:
    ```bash
    docker exec -it lixpi-markdown-stream-parser-demo pnpm run split-sample-into-chunks -- --file=<input-file-path> --chunkSize=<chunk-size> --outputPath=<output-file-path>
    ```
@@ -367,11 +385,11 @@ Inside the repository root dir run:
    docker exec -it lixpi-markdown-stream-parser-demo pnpm run split-sample-into-chunks -- --file=demo/llm-input-examples-raw-text/long-consecutive-sequence.txt --chunkSize=2 --outputPath=demo/llm-stream-examples-manually-simulated/long-consecutive-sequence.json
    ```
 
-This will execute the parser against the selected example stream and print parsed segments to the console.
+This will execute the parser against the selected example stream and print parsed chunks to the console.
 
 ## Running tests
 
-The project includes comprehensive test coverage with 187 tests across all core functionality. To run the tests:
+The project includes comprehensive test coverage with 219+ tests across all core functionality. To run the tests:
 
 1. Start the Docker container:
    ```bash
@@ -387,13 +405,6 @@ The project includes comprehensive test coverage with 187 tests across all core 
    ```bash
    docker exec -it lixpi-markdown-stream-parser-demo pnpm test
    ```
-
-4. Run tests with coverage reporting:
-   ```bash
-   docker exec -it lixpi-markdown-stream-parser-demo pnpm test:coverage
-   ```
-
-**Note:** 3 tests are intentionally designed to fail to prove the existence of the known bug with long consecutive character sequences. All other tests should pass.
 
 ---
 
@@ -411,62 +422,73 @@ flowchart LR
     B --> C[Accumulate Content]
     C --> D[Tree-sitter Parse]
     D --> E[AST Traversal]
-    E --> F[Emit Segments]
+    E --> F[Emit Chunks]
     F --> G[Subscribers]
 ```
 
 ### Module Architecture
 
-The tree-sitter parsing logic is split into focused modules:
+The tree-sitter parsing pipeline is organized into four layers. Each layer has a single direction of dependency — top layers call into lower layers, never the reverse.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#F6C7B3', 'primaryTextColor': '#5a3a2a', 'primaryBorderColor': '#d4956a', 'secondaryColor': '#C3DEDD', 'secondaryTextColor': '#1a3a47', 'secondaryBorderColor': '#4a8a9d', 'tertiaryColor': '#DCECE9', 'tertiaryTextColor': '#1a3a47', 'tertiaryBorderColor': '#82B2C0', 'lineColor': '#d4956a', 'textColor': '#5a3a2a'}}}%%
 graph TB
-    subgraph "Entry Point"
-        Parser[MarkdownStreamParser]
+    subgraph "Public API"
+        Parser[MarkdownStreamParser<br/>Singleton · Pub/Sub]
     end
 
-    subgraph "Tree-sitter Modules"
-        SG[segment-generator.ts]
-        BD[block-detection.ts]
-        ID[inline-detection.ts]
-        CE[content-extraction.ts]
-        TN[tree-navigation.ts]
-        SB[segment-builder.ts]
-        TY[types.ts]
+    subgraph "Stream Processing"
+        Backend[TreeSitterStreamParser<br/>Parser backend]
+        Buffer[TokensStreamBuffer<br/>Token accumulation]
     end
 
-    subgraph "External"
+    subgraph "Orchestration"
+        SegGen[SegmentGenerator<br/>Chunk generation]
+    end
+
+    subgraph "Analysis"
+        BD[BlockDetection<br/>Block type classification]
+        ID[InlineDetection<br/>Span detection]
+        CE[ContentExtraction<br/>Syntax stripping]
+        SB[SegmentBuilder<br/>Chunk/Span construction]
+    end
+
+    subgraph "Foundation"
+        TN[TreeNavigation<br/>AST traversal utilities]
+        Types[Types<br/>Chunk · Span · BlockContext]
+    end
+
+    subgraph "External Grammars"
         TS[(web-tree-sitter)]
-        MD[(tree-sitter-markdown)]
-        MDI[(tree-sitter-markdown-inline)]
+        TS --> MD[(tree-sitter-markdown)]
+        TS --> MDI[(tree-sitter-markdown-inline)]
     end
 
-    Parser --> SG
-    SG --> BD
-    SG --> ID
-    SG --> CE
-    SG --> SB
-    SG --> TY
+    Parser --> Backend
+    Backend --> Buffer
+    Backend --> SegGen
+    Backend -.-> TS
+    SegGen --> BD
+    SegGen --> ID
+    SegGen --> CE
+    SegGen --> SB
     BD --> TN
     ID --> TN
-    SB --> TY
-    CE --> TS
-    BD --> TS
-    ID --> TS
-    TS --> MD
-    TS --> MDI
 ```
 
-| Module | Responsibility |
-|--------|----------------|
-| `segment-generator.ts` | Main orchestrator - generates chunks from content ranges with span detection |
-| `block-detection.ts` | Determines block type (heading, paragraph, code_block, list_item, table) |
-| `inline-detection.ts` | Detects inline spans (bold, italic, code, strikethrough, link, image) |
-| `content-extraction.ts` | Strips markdown syntax and extracts clean content |
-| `tree-navigation.ts` | AST traversal utilities |
-| `segment-builder.ts` | Creates Chunk and Span objects with UTF-16 offsets |
-| `types.ts` | Type definitions (Chunk, Span, BlockContext, etc.) |
+> `types.ts` is a shared dependency imported by every module in the pipeline — arrows omitted for clarity.
+
+| Layer | Module | Responsibility |
+|-------|--------|----------------|
+| Stream Processing | `tree-sitter-markdown-stream-parser.ts` | Parser backend — manages tree-sitter lifecycle, drives the pipeline |
+| Stream Processing | `tokens-stream-buffer.ts` | Accumulates incoming tokens into parseable content windows |
+| Orchestration | `segment-generator.ts` | Central orchestrator — generates chunks with block context and span info |
+| Analysis | `block-detection.ts` | Classifies block type: `heading`, `paragraph`, `code_block`, `list_item`, `table` |
+| Analysis | `inline-detection.ts` | Detects inline spans: bold, italic, code, strikethrough, link, image |
+| Analysis | `content-extraction.ts` | Strips markdown delimiters, extracts clean text content |
+| Analysis | `segment-builder.ts` | Constructs `Chunk` and `Span` objects with UTF-16 offsets |
+| Foundation | `tree-navigation.ts` | AST traversal — finds nodes at positions, walks inline trees |
+| Foundation | `types.ts` | Shared type definitions: `Chunk`, `Span`, `BlockContext`, `SpanType` |
 
 ### Parser API Flow
 
@@ -548,57 +570,16 @@ sequenceDiagram
     end
 ```
 
-### Parser State Transitions
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#F6C7B3', 'primaryTextColor': '#5a3a2a', 'primaryBorderColor': '#d4956a', 'secondaryColor': '#C3DEDD', 'lineColor': '#d4956a', 'textColor': '#5a3a2a'}}}%%
-stateDiagram-v2
-    [*] --> Idle: getInstance(config?)
-
-    Idle --> Parsing: startParsing()
-
-    state Parsing {
-        [*] --> AwaitingToken
-
-        AwaitingToken --> ProcessingChunk: parseToken(chunk)
-        ProcessingChunk --> DetectingBlock: tree-sitter parse
-        ProcessingChunk --> BacktrackDetected: getChangedRanges() detects change
-        BacktrackDetected --> DetectingBlock: emit with backtrackOffset
-        DetectingBlock --> ProcessingHeading: atx_heading found
-        DetectingBlock --> ProcessingParagraph: paragraph found
-        DetectingBlock --> ProcessingCodeBlock: fenced_code_block found
-        DetectingBlock --> ProcessingList: list_item found
-        DetectingBlock --> ProcessingTable: pipe_table found
-
-        ProcessingHeading --> DetectingSpans: check inline spans
-        ProcessingParagraph --> DetectingSpans: check inline spans
-        ProcessingList --> DetectingSpans: check inline spans
-        ProcessingTable --> DetectingSpans: check inline spans
-
-        DetectingSpans --> BufferingIncomplete: unmatched delimiter
-        DetectingSpans --> ProcessSpans: spans detected
-        ProcessSpans --> CategorizeSpans: opening/closing/contained
-        BufferingIncomplete --> AwaitingToken: wait for more
-
-        ProcessingCodeBlock --> EmitChunk: extract content
-        CategorizeSpans --> EmitChunk: build Chunk with spans
-        EmitChunk --> AwaitingToken: notify subscribers
-    }
-
-    Parsing --> Flushing: stopParsing()
-    Flushing --> Idle: END_STREAM
-    Idle --> [*]: removeInstance()
-```
 
 ### How Content Gets Processed
 
 #### 1. Token Buffering
 
-Incoming tokens are accumulated in a `TokensStreamBuffer`. This gives us enough context to parse meaningful chunks rather than character-by-character.
+Incoming tokens are accumulated in a `TokensStreamBuffer`. The buffer waits for word boundaries (whitespace) before emitting, so the parser always has enough context to produce meaningful chunks rather than character-by-character.
 
 #### 2. AST-Based Parsing
 
-The core parsing is done by `web-tree-sitter` with the `tree-sitter-markdown` grammar. When content comes in, we parse it and get an AST that tells us exactly what we're dealing with - headers, paragraphs, code blocks, lists, bold text, etc.
+The core parsing is done by `web-tree-sitter` with the `tree-sitter-markdown` grammar. When content comes in, we parse it incrementally (editing the existing tree) and get an AST that tells us exactly what we're dealing with — headers, paragraphs, code blocks, lists, bold text, etc.
 
 Tree-sitter handles incomplete/malformed markdown gracefully. It uses error recovery and can still produce a usable tree even when the input is partial or slightly broken (which happens constantly with LLM streams).
 
@@ -606,20 +587,9 @@ Tree-sitter handles incomplete/malformed markdown gracefully. It uses error reco
 
 A tricky problem with streaming is that inline markers can arrive split across chunks. For example, you might get `**hello` in one chunk and `**` in the next.
 
-The parser buffers content when it detects an unmatched delimiter:
+The parser buffers content when it detects an unmatched delimiter. It checks whether the inline tree-sitter parser can see a complete structure (emphasis, code_span, etc.). If not, the content is held in `pendingInlineContent` and the parser waits for more tokens before emitting.
 
-```typescript
-// Check for unmatched backtick
-if (newPortion.includes('`')) {
-    const hasCompleteCodeSpan = hasCompleteCodeSpanAt(inlineTree.rootNode, ...);
-    if (!hasCompleteCodeSpan) {
-        state.pendingInlineContent = newContent;
-        return { segments, state };  // Buffer and wait for more
-    }
-}
-```
-
-This applies to inline code, bold (`**`), italic (`*` or `_`), and strikethrough (`~~`).
+This applies to inline code (`` ` ``), bold (`**`), italic (`*` or `_`), and strikethrough (`~~`).
 
 #### 4. Two-Parser Approach
 
@@ -629,9 +599,9 @@ The two-parser approach (one for block structure, one for inline content) is how
 
 ### Pub/Sub and Singleton Patterns
 
-The parser uses a **publish/subscribe** pattern - you subscribe to get parsed segments as they're ready. Parsing is decoupled from rendering, and multiple subscribers per parser instance are supported.
+The parser uses a **publish/subscribe** pattern — you subscribe to get parsed chunks as they're ready. Parsing is decoupled from rendering, and multiple subscribers per parser instance are supported.
 
-Each logical stream gets its own parser instance via `getInstance(instanceId)` (singleton pattern). This allows parallel processing of multiple streams without state conflicts.
+Each logical stream gets its own parser instance via `await getInstance(instanceId)` (singleton pattern). This allows parallel processing of multiple streams without state conflicts.
 
 ```typescript
 const parser = await MarkdownStreamParser.getInstance('session-1')
